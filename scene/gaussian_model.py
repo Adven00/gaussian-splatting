@@ -50,6 +50,7 @@ class GaussianModel:
         self._scaling = torch.empty(0)
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
+        # self._diffuse_color = torch.empty(0)
         self.max_radii2D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
@@ -67,6 +68,7 @@ class GaussianModel:
             self._scaling,
             self._rotation,
             self._opacity,
+            # self._diffuse_color,
             self.max_radii2D,
             self.xyz_gradient_accum,
             self.denom,
@@ -82,6 +84,7 @@ class GaussianModel:
         self._scaling, 
         self._rotation, 
         self._opacity,
+        # self._diffuse_color,
         self.max_radii2D, 
         xyz_gradient_accum, 
         denom,
@@ -109,6 +112,10 @@ class GaussianModel:
         features_dc = self._features_dc
         features_rest = self._features_rest
         return torch.cat((features_dc, features_rest), dim=1)
+
+    # @property
+    # def get_diffuse_color(self):
+    #     return self._diffuse_color
     
     @property
     def get_opacity(self):
@@ -139,6 +146,7 @@ class GaussianModel:
         opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
+        # self._diffuse_color = nn.Parameter(fused_color.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
         self._scaling = nn.Parameter(scales.requires_grad_(True))
@@ -153,6 +161,7 @@ class GaussianModel:
 
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+            # {'params': [self._diffuse_color], 'lr': training_args.diffuse_color_lr, "name": "diffuse_color"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
             {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
