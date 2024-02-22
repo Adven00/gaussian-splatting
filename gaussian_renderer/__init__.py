@@ -68,7 +68,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
-    # By default, override_color is None, pipe.convert_SHs_python is false, pipe.convert_palettes_python is False.
+    # By default, override_color is None, pipe.convert_SHs_python is false, pipe.use_palette is False.
     shs = None
     colors_precomp = None
     if override_color is None:
@@ -78,8 +78,12 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
             sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
-        elif pipe.convert_palettes_python:
-            print("# todo")
+        elif pipe.use_palette:
+            dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
+            dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
+            pm = PaletteModel()
+            intensity, offset, weight, diffuse, specular = pm(pc.get_xyz, dir_pp_normalized)
+            colors_precomp = pm.compose(intensity, offset, weight, specular)
         else:
             shs = pc.get_features
     else:
