@@ -14,6 +14,7 @@ import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
+from utils.palette_utils import palette_weights_from_alpha
 
 def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
     """
@@ -69,15 +70,31 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
     shs = None
     colors_precomp = None
+    #BHY 不同 layer 的 colors_precomp, 收集给各 layer 渲染用
+    colors_precomp_list = []
     if override_color is None:
-        if pipe.convert_SHs_python:
+        if pipe.color_compute_mode == "sh_python":
             shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
             dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
             sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
-        else:
+        elif pipe.color_compute_mode == "sh_cuda":
             shs = pc.get_features
+        #BHY palette 计算在这里
+        elif pipe.color_compute_mode == "palette":
+            palette_weights = palette_weights_from_alpha(pc.get_alpha)
+            colors_precomp = palette_weights @ pc.get_palette
+
+            #BHY 分解不同 layer 的 colors_precomp
+            if pipe.decompose_layer:
+                with torch.no_grad(): 
+                    for i in range(pc.get_palette.shape[0]):
+                        new_palette_weights = torch.zeros_like(palette_weights, device="cuda")
+                        new_palette_weights[:, i] = palette_weights[:, i]
+                        colors_precomp_list.append(new_palette_weights @ pc.get_palette)
+        else:
+            assert False, "Invalid color compute mode {}!".format(pipe.color_compute_mode)
     else:
         colors_precomp = override_color
 
@@ -91,10 +108,31 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         scales = scales,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp)
+    
+    result = {
+        "render": rendered_image,
+        "viewspace_points": screenspace_points,
+        "visibility_filter" : radii > 0,
+        "radii": radii
+    }
+    
+    #BHY 渲染分解后的各 layer，开启 palette 模式才能启用
+    if pipe.decompose_layer and pipe.color_compute_mode == "palette":
+        with torch.no_grad():    
+            layers = []
+            for colors_precomp in colors_precomp_list:
+                layer, radii = rasterizer(
+                    means3D = means3D,
+                    means2D = means2D,
+                    shs = shs,
+                    colors_precomp = colors_precomp,
+                    opacities = opacity,
+                    scales = scales,
+                    rotations = rotations,
+                    cov3D_precomp = cov3D_precomp)
+                layers.append(layer)
+            result["layers"] = layers
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-    return {"render": rendered_image,
-            "viewspace_points": screenspace_points,
-            "visibility_filter" : radii > 0,
-            "radii": radii}
+    return result

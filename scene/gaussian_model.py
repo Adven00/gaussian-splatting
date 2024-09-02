@@ -36,17 +36,22 @@ class GaussianModel:
         self.covariance_activation = build_covariance_from_scaling_rotation
 
         self.opacity_activation = torch.sigmoid
+        self.alpha_activation = torch.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
 
         self.rotation_activation = torch.nn.functional.normalize
 
-
-    def __init__(self, sh_degree : int):
+    def __init__(self, sh_degree : int, palette_size : int = -1):
         self.active_sh_degree = 0
+        #BHY 增加参数 palette_size，为 -1 说明不使用 palette
+        self.palette_size = palette_size
         self.max_sh_degree = sh_degree  
         self._xyz = torch.empty(0)
         self._features_dc = torch.empty(0)
         self._features_rest = torch.empty(0)
+        #BHY 先放一个空的 alpha 和 palette 在这里
+        self._alpha = torch.empty(0)
+        self._palette = torch.empty(0)
         self._scaling = torch.empty(0)
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
@@ -62,6 +67,7 @@ class GaussianModel:
         return (
             self.active_sh_degree,
             self._xyz,
+            self._alpha,
             self._features_dc,
             self._features_rest,
             self._scaling,
@@ -76,7 +82,8 @@ class GaussianModel:
     
     def restore(self, model_args, training_args):
         (self.active_sh_degree, 
-        self._xyz, 
+        self._xyz,
+        self._alpha,
         self._features_dc, 
         self._features_rest,
         self._scaling, 
@@ -104,6 +111,25 @@ class GaussianModel:
     def get_xyz(self):
         return self._xyz
     
+    #BHY 用 sigmoid 保证输出 [0, 1]
+    @property
+    def get_alpha(self):
+        return self.alpha_activation(self._alpha)
+    
+    #BHY 转移到对数空间
+    @property
+    def get_alpha(self):
+        return self.alpha_activation(self._alpha)
+    
+    #BHY sigmoid(-x) = 1 - sigmoid(x)
+    # @property
+    # def get_one_minus_alpha(self):
+    #     return self.alpha_activation(-self._alpha)
+    
+    @property
+    def get_palette(self):
+        return self._palette
+    
     @property
     def get_features(self):
         features_dc = self._features_dc
@@ -121,7 +147,8 @@ class GaussianModel:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
+    #BHY 实际的初始化发生在这里
+    def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float, palette_path):
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
@@ -139,8 +166,22 @@ class GaussianModel:
         opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
+
+        #BHY 加载 palette，如有
+        if os.path.exists(palette_path):
+            self._palette = torch.from_numpy(np.load(palette_path)).cuda()
+            self.palette_size = self._palette.shape[0]
+            print("Number of palette colors : {}".format(self.palette_size))
+
+        #BHY 暂时先初始化为 0，把 alpha 转化成可优化的参数，注意 alpha 与 feature 可以共存
+        if self.palette_size != -1:
+            #BHY 注意这里的 alpha shape，默认最后一层是背景颜色，alpha 为 1！
+            alpha = torch.zeros((fused_point_cloud.shape[0], self.palette_size - 1), device="cuda")
+            self._alpha = nn.Parameter(alpha.requires_grad_(True))
+
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
+
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
@@ -160,6 +201,10 @@ class GaussianModel:
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
         ]
 
+        #BHY 设置 alpha 的学习率，这里暂时先使用 feature_lr，加入到 optimizer 中
+        if self.palette_size != -1:
+            l.append({'params': [self._alpha], 'lr': training_args.feature_lr, "name": "alpha"})
+
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
@@ -174,6 +219,7 @@ class GaussianModel:
                 param_group['lr'] = lr
                 return lr
 
+    #BHY 和 ply 文件相关，暂时先不加入 alpha
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
         # All channels except the 3 DC
@@ -188,7 +234,12 @@ class GaussianModel:
             l.append('rot_{}'.format(i))
         return l
 
+    #BHY 和 ply 文件相关，暂时先不加入 alpha
     def save_ply(self, path):
+        if self.palette_size != -1:
+            print("Saving ply is unavailable for palette gaussian model now!")
+            return
+        
         mkdir_p(os.path.dirname(path))
 
         xyz = self._xyz.detach().cpu().numpy()
@@ -212,7 +263,12 @@ class GaussianModel:
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
+    #BHY 和 ply 文件相关，暂时先不加入 alpha
     def load_ply(self, path):
+        if self.palette_size != -1:
+            print("Loading ply is unavailable for palette gaussian model now!")
+            return
+        
         plydata = PlyData.read(path)
 
         xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
@@ -293,6 +349,9 @@ class GaussianModel:
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
 
         self._xyz = optimizable_tensors["xyz"]
+        #BHY 与高斯球修剪相关
+        if self.palette_size != -1:
+            self._alpha = optimizable_tensors["alpha"]
         self._features_dc = optimizable_tensors["f_dc"]
         self._features_rest = optimizable_tensors["f_rest"]
         self._opacity = optimizable_tensors["opacity"]
@@ -326,18 +385,26 @@ class GaussianModel:
 
         return optimizable_tensors
 
-    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation):
+    #BHY 与高斯球的加密有关，python 不能重载函数，只能把 alpha 和 feature 都写进参数，调用时不用的传 None
+    def densification_postfix(self, new_xyz, new_alpha, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation):
         d = {"xyz": new_xyz,
-        "f_dc": new_features_dc,
-        "f_rest": new_features_rest,
         "opacity": new_opacities,
         "scaling" : new_scaling,
         "rotation" : new_rotation}
 
+        if self.palette_size != -1:
+            d["alpha"] = new_alpha
+        d["f_dc"] = new_features_dc
+        d["f_rest"] = new_features_rest
+
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]
+
+        if self.palette_size != -1:
+            self._alpha = optimizable_tensors["alpha"]
         self._features_dc = optimizable_tensors["f_dc"]
         self._features_rest = optimizable_tensors["f_rest"]
+
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
@@ -346,6 +413,7 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
+    #BHY 分裂高斯球的函数，N 是分裂的个数，alpha 和 feature 在第一个维度上复制 N 次即可
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
@@ -362,11 +430,18 @@ class GaussianModel:
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
         new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
+
+        if self.palette_size != -1:
+            new_alpha = self._alpha[selected_pts_mask].repeat(N,1)
+
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
 
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+        if self.palette_size != -1:
+            self.densification_postfix(new_xyz, new_alpha, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+        else:
+            self.densification_postfix(new_xyz, None, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
 
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
@@ -378,13 +453,19 @@ class GaussianModel:
                                               torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
         
         new_xyz = self._xyz[selected_pts_mask]
-        new_features_dc = self._features_dc[selected_pts_mask]
-        new_features_rest = self._features_rest[selected_pts_mask]
-        new_opacities = self._opacity[selected_pts_mask]
+        new_opacity = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
-
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
+        
+        if self.palette_size != -1:
+            new_alpha = self._alpha[selected_pts_mask]
+        new_features_dc = self._features_dc[selected_pts_mask]
+        new_features_rest = self._features_rest[selected_pts_mask]
+            
+        if self.palette_size != -1:
+            self.densification_postfix(new_xyz, new_alpha, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+        else:
+            self.densification_postfix(new_xyz, None, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom

@@ -63,7 +63,12 @@ class ModelParams(ParamGroup):
 
 class PipelineParams(ParamGroup):
     def __init__(self, parser):
-        self.convert_SHs_python = False
+        #BHY 增加一个字符串参数控制颜色计算模式 sh_cuda/sh_python/palette/palette_decompose
+        # guassian render 只能拿到 pipe 参数 
+        self.color_compute_mode = "sh_cuda"
+        #BHY 控制是否分开渲染各个 layer 
+        self.decompose_layer = True
+        # self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
         super().__init__(parser, "Pipeline Parameters")

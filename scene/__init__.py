@@ -27,6 +27,7 @@ class Scene:
         :param path: Path to colmap scene main folder.
         """
         self.model_path = args.model_path
+        self.palette_path = None
         self.loaded_iter = None
         self.gaussians = gaussians
 
@@ -47,6 +48,9 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
         else:
             assert False, "Could not recognize scene type!"
+
+        #BHY 拼接路径，不保证合法性
+        self.palette_path = os.path.join(args.source_path, "rgb_palette.npy")
 
         if not self.loaded_iter:
             with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
@@ -80,7 +84,8 @@ class Scene:
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
         else:
-            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
+            #BHY 传递 palette_path
+            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent, self.palette_path)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
