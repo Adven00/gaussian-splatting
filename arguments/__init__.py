@@ -67,7 +67,7 @@ class PipelineParams(ParamGroup):
         # guassian render 只能拿到 pipe 参数 
         self.color_compute_mode = "sh_cuda"
         #BHY 控制是否分开渲染各个 layer 
-        self.decompose_layer = True
+        self.decompose_layer = False
         # self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False

@@ -177,17 +177,18 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     image = torch.clamp(result["render"], 0.0, 1.0)
 
                     if tb_writer and (idx < 5):
-                        tb_writer.add_images(config['name'] + "_view_{}/render_{}".format(iteration, viewpoint.image_name), image[None], global_step=iteration)
+                        tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None], global_step=iteration)
 
                         #BHY RenderArgs[0] 是 pipe
+                        # 显示各个 layer 的渲染结果
                         if renderArgs[0].decompose_layer and renderArgs[0].color_compute_mode == "palette":
                             layers = result["layers"]
                             for i, layer in enumerate(layers):
                                 layer = torch.clamp(layer, 0.0, 1.0)
-                                tb_writer.add_images(config['name'] + "_view_{}/layer{}_{}".format(iteration, i, viewpoint.image_name), layer[None], global_step=iteration)
+                                tb_writer.add_images(config['name'] + "_view_{}/layer{}".format(viewpoint.image_name, i), layer[None], global_step=iteration)
 
                         if iteration == testing_iterations[0]:
-                            tb_writer.add_images(config['name'] + "_view_{}/gt_{}".format(iteration, viewpoint.image_name), gt_image[None], global_step=iteration)
+                            tb_writer.add_images(config['name'] + "_view_{}/gt".format(viewpoint.image_name), gt_image[None], global_step=iteration)
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
                 psnr_test /= len(config['cameras'])
