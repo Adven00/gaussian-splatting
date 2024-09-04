@@ -16,7 +16,8 @@ from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 from utils.palette_utils import palette_weights_from_alpha
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
+#BHY 用 decompose_layer 控制是否分层渲染
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, decompose_layer = False):
     """
     Render the scene. 
     
@@ -87,7 +88,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             colors_precomp = palette_weights @ pc.get_palette
 
             #BHY 分解不同 layer 的 colors_precomp
-            if pipe.decompose_layer:
+            if decompose_layer:
                 with torch.no_grad(): 
                     for i in range(pc.get_palette.shape[0]):
                         new_palette_weights = torch.zeros_like(palette_weights, device="cuda")
@@ -117,7 +118,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     }
     
     #BHY 渲染分解后的各 layer，开启 palette 模式才能启用
-    if pipe.decompose_layer and pipe.color_compute_mode == "palette":
+    if pipe.color_compute_mode == "palette" and decompose_layer:
         with torch.no_grad():    
             layers = []
             for colors_precomp in colors_precomp_list:

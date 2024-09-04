@@ -173,7 +173,8 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 for idx, viewpoint in enumerate(config['cameras']):
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
 
-                    result = renderFunc(viewpoint, scene.gaussians, *renderArgs)
+                    #BHY 只在 test 的时候渲染各层，减少训练开销
+                    result = renderFunc(viewpoint, scene.gaussians, *renderArgs, decompose_layer=True)
                     image = torch.clamp(result["render"], 0.0, 1.0)
 
                     if tb_writer and (idx < 5):
@@ -181,7 +182,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
                         #BHY RenderArgs[0] 是 pipe
                         # 显示各个 layer 的渲染结果
-                        if renderArgs[0].decompose_layer and renderArgs[0].color_compute_mode == "palette":
+                        if renderArgs[0].color_compute_mode == "palette":
                             layers = result["layers"]
                             for i, layer in enumerate(layers):
                                 layer = torch.clamp(layer, 0.0, 1.0)
@@ -215,7 +216,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     #BHY 改成每 2000 次测试一次
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=range(2000, 30000, 2000))
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=range(2000, 200000, 2000))
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7000, 30000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])

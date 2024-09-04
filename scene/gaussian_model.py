@@ -201,9 +201,9 @@ class GaussianModel:
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
         ]
 
-        #BHY 设置 alpha 的学习率，这里暂时先使用 feature_lr，加入到 optimizer 中
+        #BHY 设置 alpha 的学习率
         if self.palette_size != -1:
-            l.append({'params': [self._alpha], 'lr': training_args.feature_lr, "name": "alpha"})
+            l.append({'params': [self._alpha], 'lr': training_args.alpha_lr, "name": "alpha"})
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
