@@ -85,7 +85,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         #BHY palette 计算在这里
         elif pipe.color_compute_mode == "palette":
             palette_weights = palette_weights_from_alpha(pc.get_alpha)
-            colors_precomp = colors_from_palette(pc.get_palette, palette_weights, pc.get_palette_offset)
+            colors_precomp = colors_from_palette(pc.get_palette, palette_weights, pc.get_palette_offset, pipe.palette_offset)
 
             #BHY 分解不同 layer 的 colors_precomp
             if decompose_layer:
@@ -93,7 +93,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                     for i in range(pc.get_palette.shape[0]):
                         new_palette_weights = torch.zeros_like(palette_weights, device="cuda")
                         new_palette_weights[:, i] = palette_weights[:, i]
-                        colors_precomp_list.append(colors_from_palette(pc.get_palette, new_palette_weights, pc.get_palette_offset))
+                        colors_precomp_list.append(colors_from_palette(pc.get_palette, new_palette_weights, pc.get_palette_offset, pipe.palette_offset))
         else:
             assert False, "Invalid color compute mode {}!".format(pipe.color_compute_mode)
     else:

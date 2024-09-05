@@ -108,7 +108,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
             loss_dict["sparsity"] = sparsity_loss
 
-        if opt.lambda_palette_offset_loss > 0:
+        if opt.lambda_palette_offset_loss > 0 and pipe.palette_offset:
             palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset))
             loss_dict["palette_offset"] = palette_offset_loss
 
