@@ -100,9 +100,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss_dict["image"] = image_loss
         loss_dict["l1"] = Ll1
 
-        if opt.lambda_palette_loss > 0:
-            palette_loss = l2_loss(orginal_palette, gaussians.get_palette) * opt.lambda_palette_loss
-            loss_dict["palette"] = palette_loss
+        # if opt.lambda_palette_loss > 0:
+        #     palette_loss = l2_loss(orginal_palette, gaussians.get_palette) * opt.lambda_palette_loss
+        #     loss_dict["palette"] = palette_loss
 
         if opt.lambda_sparsity_loss > 0:
             sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
