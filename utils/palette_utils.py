@@ -24,3 +24,22 @@ def plot_palette_colors(palette, c=50):
     plt.figure()
     plt.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
     plt.imshow(palette2)
+
+# import torch
+# 
+# palette_offset = torch.zeros([1000, 6, 3])
+# palette = torch.zeros([6, 3])
+# weight = torch.zeros([1000, 6])
+# 
+# new_palette = palette_offset + palette
+# 
+# print(weight[:, None].shape)
+# print(new_palette.shape)
+# 
+# color = weight[:, None] @ new_palette
+# 
+# print(color.shape)
+# color = color.squeeze()
+# print(color.shape)
+def colors_from_palette_model(palette, weight, offset):
+    return (weight[:, None] @ (palette + offset)).squeeze()

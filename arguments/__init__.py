@@ -66,7 +66,7 @@ class PipelineParams(ParamGroup):
     def __init__(self, parser):
         #BHY 增加一个字符串参数控制颜色计算模式 sh_cuda/sh_python/palette
         # guassian render 只能拿到 pipe 参数 
-        self.color_compute_mode = "sh_cuda"
+        self.color_compute_mode = "palette"
         # self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
@@ -79,9 +79,16 @@ class OptimizationParams(ParamGroup):
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
         self.position_lr_max_steps = 30_000
-        #BHY 为 alpha 设置单独的学习率
-        #设置为与 feature_lr 相同时 loss 先降后升，效果不好
-        self.alpha_lr = 0.0025
+        #BHY 设置学习率
+        # 设置为与 feature_lr 相同时 loss 先降后升，效果不好
+        self.alpha_lr = 0.0005
+        #BHY 目前参照 palette nerf 设置, lambda 大于 0 代表使用该 loss
+        self.palette_lr = 0.001
+        self.palette_offset_lr = 0.001
+        self.lambda_palette_offset_loss = 0.03
+        self.lambda_palette_loss = 0.001
+        self.lambda_sparsity_loss = 0.0002
+
         self.feature_lr = 0.0025
         self.opacity_lr = 0.05
         self.scaling_lr = 0.005

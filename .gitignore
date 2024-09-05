@@ -1,5 +1,6 @@
 *.pyc
 *.ipynb
+*.bat
 .vscode
 output
 build
