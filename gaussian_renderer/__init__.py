@@ -117,12 +117,12 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         "radii": radii
     }
     
-    #BHY 渲染分解后的各 layer，开启 palette 模式才能启用
+    #BHY 渲染分解后的各 layer，开启 decompose_layer 才能启用
     if pipe.color_compute_mode == "palette" and decompose_layer:
         with torch.no_grad():    
             layers = []
             for colors_precomp in colors_precomp_list:
-                layer, radii = rasterizer(
+                layer, _ = rasterizer(
                     means3D = means3D,
                     means2D = means2D,
                     shs = shs,

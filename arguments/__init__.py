@@ -67,6 +67,7 @@ class PipelineParams(ParamGroup):
         #BHY 增加一个字符串参数控制颜色计算模式 sh_cuda/sh_python/palette
         # guassian render 只能拿到 pipe 参数 
         self.color_compute_mode = "palette"
+        #BHY 是否为 palette 加入 offset ，即 soft palette color
         self.palette_offset = False
         # self.convert_SHs_python = False
         self.compute_cov3D_python = False

@@ -71,6 +71,7 @@ class GaussianModel:
         return (
             self.active_sh_degree,
             self._xyz,
+            self._palette,
             self._alpha,
             self._palette_offset,
             self._features_dc,
@@ -89,6 +90,7 @@ class GaussianModel:
         (self.active_sh_degree, 
         self._xyz,
         self._alpha,
+        self._palette,
         self._palette_offset,
         self._features_dc, 
         self._features_rest,
@@ -228,7 +230,36 @@ class GaussianModel:
                 param_group['lr'] = lr
                 return lr
 
-    #BHY 和 ply 文件相关，暂时先不加入 alpha
+
+    '''
+    https://paulbourke.net/dataformats/ply/
+
+    ply example
+    format ascii 1.0           { ascii/binary, format version number }
+    comment made by Greg Turk  { comments keyword specified, like all lines }
+    element vertex 8           { define "vertex" element, 8 of them in file }
+    property float x           { vertex contains float "x" coordinate }
+    property float y           { y coordinate is also a vertex property }
+    property float z           { z coordinate, too }
+    element face 6             { there are 6 "face" elements in the file }
+    property list uchar int vertex_index { "vertex_indices" is a list of ints }
+    end_header                 { delimits the end of the header }
+    0 0 0                      { start of vertex list }
+    0 0 1
+    0 1 1
+    0 1 0
+    1 0 0
+    1 0 1
+    1 1 1
+    1 1 0
+    4 0 1 2 3                  { start of face list }
+    4 7 6 5 4
+    4 0 4 5 1
+    4 1 5 6 2
+    4 2 6 7 3
+    4 3 7 4 0
+    '''
+    #BHY 构建 ply 的顶点属性列表
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
         # All channels except the 3 DC
@@ -241,14 +272,16 @@ class GaussianModel:
             l.append('scale_{}'.format(i))
         for i in range(self._rotation.shape[1]):
             l.append('rot_{}'.format(i))
+        #BHY 加入 palette 相关属性
+        if self.palette_size != -1:
+            for i in range(self._alpha.shape[1]):
+                l.append('alpha_{}'.format(i))
+
+            for i in range(self._palette_offset.shape[1]*3):
+                l.append('p_offset_{}'.format(i))
         return l
 
-    #BHY 和 ply 文件相关，暂时先不加入 alpha
     def save_ply(self, path):
-        if self.palette_size != -1:
-            print("Saving ply is unavailable for palette gaussian model now!")
-            return
-        
         mkdir_p(os.path.dirname(path))
 
         xyz = self._xyz.detach().cpu().numpy()
@@ -259,10 +292,19 @@ class GaussianModel:
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
 
+        #BHY palette 相关属性保存到 ply
+        if self.palette_size != -1:
+            alpha = self._alpha.detach().cpu().numpy()
+            palette_offset = self._palette_offset.detach().flatten(start_dim=1).contiguous().cpu().numpy()
+
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
         attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+
+        if self.palette_size != -1:
+            attributes = np.concatenate((attributes, alpha, palette_offset), axis=1)
+
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
@@ -272,11 +314,7 @@ class GaussianModel:
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
-    #BHY 和 ply 文件相关，暂时先不加入 alpha
     def load_ply(self, path):
-        if self.palette_size != -1:
-            print("Loading ply is unavailable for palette gaussian model now!")
-            return
         
         plydata = PlyData.read(path)
 
@@ -311,6 +349,28 @@ class GaussianModel:
         for idx, attr_name in enumerate(rot_names):
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
+        #BHY 读取 ply 中的 palette 相关属性
+        if self.palette_size != -1:
+            alpha_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("alpha_")]
+            alpha_names = sorted(alpha_names, key = lambda x: int(x.split('_')[-1]))
+            assert len(alpha_names)==self.palette_size - 1
+
+            alpha = np.zeros((xyz.shape[0], len(alpha_names)))
+            for idx, attr_name in enumerate(alpha_names):
+                alpha[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+            palette_offset_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("p_offset_")]
+            palette_offset_names = sorted(palette_offset_names, key = lambda x: int(x.split('_')[-1]))
+            assert len(palette_offset_names)==self.palette_size * 3
+
+            palette_offset = np.zeros((xyz.shape[0], len(palette_offset_names)))
+            for idx, attr_name in enumerate(palette_offset_names):
+                palette_offset[:, idx] = np.asarray(plydata.elements[0][attr_name])
+            palette_offset = palette_offset.reshape((-1, self.palette_size, 3))
+
+            self._palette_offset = nn.Parameter(torch.tensor(palette_offset, dtype=torch.float, device="cuda").requires_grad_(True))
+            self._alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float, device="cuda").requires_grad_(True))
+
         self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
         self._features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
@@ -319,6 +379,16 @@ class GaussianModel:
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
 
         self.active_sh_degree = self.max_sh_degree
+
+    def load_palette(self, palette_path):
+        #BHY 加载 palette，如有
+        if os.path.exists(palette_path):
+            self._palette = torch.from_numpy(np.load(palette_path)).cuda()
+            self.palette_size = self._palette.shape[0]
+            print("Number of palette colors : {}".format(self.palette_size))
+
+    def save_palette(self, palette_path):
+        np.save(palette_path, self._palette.detach().cpu().numpy())
 
     #BHY 目前只用于 opacity ，不用管
     def replace_tensor_to_optimizer(self, tensor, name):

@@ -43,9 +43,11 @@ def plot_palette_colors(palette, c=50):
 # print(color.shape)
 def colors_from_palette(palette, weight, offset, use_offset):
     if use_offset:
-        return (weight[:, None] @ (palette + offset)).squeeze()
+        colors = (weight[:, None] @ (palette + offset)).squeeze()
     else:
-        return weight @ palette
+        colors = weight @ palette
+    colors = torch.clamp(colors, 0.0, 1.0) 
+    return colors
 
 def rgb_to_hsl(rgb: torch.Tensor) -> torch.Tensor:
     cmax, cmax_idx = torch.max(rgb, dim=1, keepdim=True)

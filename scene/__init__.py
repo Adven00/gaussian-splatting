@@ -27,7 +27,7 @@ class Scene:
         :param path: Path to colmap scene main folder.
         """
         self.model_path = args.model_path
-        self.palette_path = None
+        self.original_palette_path = None
         self.loaded_iter = None
         self.gaussians = gaussians
 
@@ -50,7 +50,7 @@ class Scene:
             assert False, "Could not recognize scene type!"
 
         #BHY 拼接路径，不保证合法性
-        self.palette_path = os.path.join(args.source_path, "rgb_palette.npy")
+        self.original_palette_path = os.path.join(args.source_path, "rgb_palette.npy")
 
         if not self.loaded_iter:
             with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
@@ -79,17 +79,21 @@ class Scene:
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
         if self.loaded_iter:
+            #BHY 要先 load palette
+            self.gaussians.load_palette(os.path.join(self.model_path, "rgb_palette.npy"))
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
         else:
             #BHY 传递 palette_path
-            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent, self.palette_path)
+            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent, self.original_palette_path)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
+        palette_path = os.path.join(self.model_path, "rgb_palette.npy")
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+        self.gaussians.save_palette(palette_path)
 
     def getTrainCameras(self, scale=1.0):
         return self.train_cameras[scale]
