@@ -67,8 +67,6 @@ class PipelineParams(ParamGroup):
         #BHY 增加一个字符串参数控制颜色计算模式 sh_cuda/sh_python/palette
         # guassian render 只能拿到 pipe 参数 
         self.color_compute_mode = "palette"
-        #BHY 是否为 palette 加入 offset ，即 soft palette color
-        self.palette_offset = False
         # self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
@@ -90,6 +88,8 @@ class OptimizationParams(ParamGroup):
         self.lambda_palette_offset_loss = 0.03
         self.lambda_palette_loss = 0.001
         self.lambda_sparsity_loss = 0.0002
+        #BHY
+        self.palette_offset_from_iter = 5000
 
         self.feature_lr = 0.0025
         self.opacity_lr = 0.05

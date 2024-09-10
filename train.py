@@ -88,7 +88,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_palette_offset=(iteration > opt.palette_offset_from_iter))
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
         # Loss
@@ -108,7 +108,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
             loss_dict["sparsity"] = sparsity_loss
 
-        if opt.lambda_palette_offset_loss > 0 and pipe.palette_offset:
+        if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
             palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset))
             loss_dict["palette_offset"] = palette_offset_loss
 
@@ -128,10 +128,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
+            training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), testing_iterations, scene, render,
+                            (pipe, background, 1, None, True, (iteration > opt.palette_offset_from_iter)))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
+
+            if (iteration - 1 == opt.palette_offset_from_iter):
+                print("\n[ITER {}] Add palette offset".format(iteration))
 
             # Densification
             if iteration < opt.densify_until_iter:
@@ -197,7 +201,7 @@ def training_report(tb_writer, iteration, loss_dict, elapsed, testing_iterations
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
 
                     #BHY 只在 test 的时候渲染各层，减少训练开销
-                    result = renderFunc(viewpoint, scene.gaussians, *renderArgs, decompose_layer=True)
+                    result = renderFunc(viewpoint, scene.gaussians, *renderArgs)
                     image = torch.clamp(result["render"], 0.0, 1.0)
 
                     if tb_writer and (idx < 5):
