@@ -135,7 +135,7 @@ class GaussianModel:
     
     @property
     def get_palette(self):
-        return self._palette
+        return torch.cat((self._palette, torch.tensor([[0, 0, 0]], dtype=torch.float, device="cuda")), dim=0)
     
     @property
     def get_features(self):
@@ -174,10 +174,11 @@ class GaussianModel:
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
 
-        #BHY 加载 palette，如有
+        #BHY 加载 palette，如有，注意 palette 末尾的黑色不参与优化
         if os.path.exists(palette_path):
-            self._palette = torch.from_numpy(np.load(palette_path)).cuda()
-            self.palette_size = self._palette.shape[0]
+            palette = torch.from_numpy(np.load(palette_path))[:-1].cuda()
+            self._palette = nn.Parameter(palette.requires_grad_(True))
+            self.palette_size = self._palette.shape[0] + 1
             print("Number of palette colors : {}".format(self.palette_size))
 
         #BHY 暂时先初始化为 0，把 alpha 转化成可优化的参数，注意 alpha 与 feature 可以共存
@@ -314,6 +315,9 @@ class GaussianModel:
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
+    def optimize_palette(self, lr):
+        self.optimizer.add_param_group({'params': [self._palette], 'lr': lr, "name": "palette"})
+
     def load_ply(self, path):
         
         plydata = PlyData.read(path)
@@ -409,6 +413,8 @@ class GaussianModel:
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
+            if group["name"] == "palette":
+                continue
             stored_state = self.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
                 stored_state["exp_avg"] = stored_state["exp_avg"][mask]
@@ -447,6 +453,8 @@ class GaussianModel:
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
+            if group["name"] == "palette":
+                continue
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
             stored_state = self.optimizer.state.get(group['params'][0], None)

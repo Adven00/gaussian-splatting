@@ -83,13 +83,14 @@ class OptimizationParams(ParamGroup):
         # 设置为与 feature_lr 相同时 loss 先降后升，效果不好
         self.alpha_lr = 0.0005
         #BHY 目前参照 palette nerf 设置, lambda 大于 0 代表使用该 loss
-        self.palette_lr = 0.001
+        self.palette_lr = 0.01
         self.palette_offset_lr = 0.001
         self.lambda_palette_offset_loss = 0.03
-        self.lambda_palette_loss = 0.001
+        self.lambda_palette_loss = 0.01
         self.lambda_sparsity_loss = 0.0002
         #BHY
         self.palette_offset_from_iter = 7000
+        self.palette_from_iter = 500
 
         self.feature_lr = 0.0025
         self.opacity_lr = 0.05

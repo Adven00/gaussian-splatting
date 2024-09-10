@@ -77,6 +77,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
+        if iteration - 1 == opt.palette_from_iter:
+            gaussians.optimize_palette(opt.palette_lr)
+
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
@@ -100,9 +103,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss_dict["image"] = image_loss
         loss_dict["l1"] = Ll1
 
-        # if opt.lambda_palette_loss > 0:
-        #     palette_loss = l2_loss(orginal_palette, gaussians.get_palette) * opt.lambda_palette_loss
-        #     loss_dict["palette"] = palette_loss
+        if opt.lambda_palette_loss > 0 and iteration > opt.palette_from_iter:
+            palette_loss = l2_loss(orginal_palette[:-1], gaussians.get_palette[:-1]) * opt.lambda_palette_loss
+            loss_dict["palette"] = palette_loss
 
         if opt.lambda_sparsity_loss > 0:
             sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
@@ -136,6 +139,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             if (iteration - 1 == opt.palette_offset_from_iter):
                 print("\n[ITER {}] Add palette offset".format(iteration))
+
+            if (iteration - 1 == opt.palette_from_iter):
+                print("\n[ITER {}] Begin optimizing palette".format(iteration))
 
             # Densification
             if iteration < opt.densify_until_iter:
