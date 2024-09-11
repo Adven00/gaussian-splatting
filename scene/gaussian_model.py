@@ -20,6 +20,7 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
+from utils.palette_utils import rgb_to_hsv
 
 class GaussianModel:
 
@@ -126,7 +127,9 @@ class GaussianModel:
     
     @property
     def get_palette_offset(self):
-        return self._palette_offset
+        # return self._palette_offset
+        return torch.cat((self._palette_offset, 
+                          torch.zeros([self._palette_offset.shape[0], 1, 3], dtype=torch.float, device="cuda")), dim=1) 
     
     #BHY sigmoid(-x) = 1 - sigmoid(x)
     # @property
@@ -175,9 +178,11 @@ class GaussianModel:
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
 
         #BHY 加载 palette，如有，注意 palette 末尾的黑色不参与优化
+        #BHY 转化到 hsv 色彩空间做优化，hue 不参与优化？
         if os.path.exists(palette_path):
             palette = torch.from_numpy(np.load(palette_path))[:-1].cuda()
             self._palette = nn.Parameter(palette.requires_grad_(True))
+            
             self.palette_size = self._palette.shape[0] + 1
             print("Number of palette colors : {}".format(self.palette_size))
 
@@ -187,7 +192,7 @@ class GaussianModel:
             alpha = torch.zeros((fused_point_cloud.shape[0], self.palette_size - 1), device="cuda")
             self._alpha = nn.Parameter(alpha.requires_grad_(True))
             #BHY 初始化 palette_offset
-            palette_offset = torch.zeros((fused_point_cloud.shape[0], self.palette_size, 3), device="cuda")
+            palette_offset = torch.zeros((fused_point_cloud.shape[0], self.palette_size - 1, 3), device="cuda")
             self._palette_offset = nn.Parameter(palette_offset.requires_grad_(True))
 
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
@@ -370,7 +375,7 @@ class GaussianModel:
             palette_offset = np.zeros((xyz.shape[0], len(palette_offset_names)))
             for idx, attr_name in enumerate(palette_offset_names):
                 palette_offset[:, idx] = np.asarray(plydata.elements[0][attr_name])
-            palette_offset = palette_offset.reshape((-1, self.palette_size, 3))
+            palette_offset = palette_offset.reshape((-1, self.palette_size - 1, 3))
 
             self._palette_offset = nn.Parameter(torch.tensor(palette_offset, dtype=torch.float, device="cuda").requires_grad_(True))
             self._alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float, device="cuda").requires_grad_(True))
@@ -387,8 +392,9 @@ class GaussianModel:
     def load_palette(self, palette_path):
         #BHY 加载 palette，如有
         if os.path.exists(palette_path):
-            self._palette = torch.from_numpy(np.load(palette_path)).cuda()
-            self.palette_size = self._palette.shape[0]
+            palette = torch.from_numpy(np.load(palette_path))[:-1].cuda()
+            self._palette = nn.Parameter(palette.requires_grad_(True))
+            self.palette_size = self._palette.shape[0] + 1
             print("Number of palette colors : {}".format(self.palette_size))
 
     def save_palette(self, palette_path):
@@ -474,7 +480,7 @@ class GaussianModel:
 
         return optimizable_tensors
 
-    #BHY 与高斯球的加密有关, 用 palette_dictcheng
+    #BHY 与高斯球的加密有关
     def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_alpha, new_palette_offset):
         d = {"xyz": new_xyz,
         "opacity": new_opacities,
