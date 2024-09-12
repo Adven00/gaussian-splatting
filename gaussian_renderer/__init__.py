@@ -95,10 +95,10 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                 dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
                 dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
 
-                specular_precomp = torch.bmm(
+                specular_precomp = torch.clamp_min(torch.bmm(
                     shs_view,
                     mlp(dir_pp_normalized).view(-1, 16, 1).to(torch.float32),
-                ).squeeze()
+                ).squeeze(), 0.0)
 
                 colors_precomp += specular_precomp
                 colors_precomp_dict["specular"] = specular_precomp

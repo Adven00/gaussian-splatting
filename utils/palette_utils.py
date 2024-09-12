@@ -42,6 +42,7 @@ def plot_palette_colors(palette, c=50):
 # color = color.squeeze()
 # print(color.shape)
 def colors_from_palette(palette, weight, offset, use_offset):
+    palette = torch.clamp(palette, 0.0, 1.0)
     if use_offset:
         colors = (weight[:, None] @ (palette + offset)).squeeze()
     else:
