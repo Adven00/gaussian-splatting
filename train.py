@@ -231,7 +231,7 @@ def training_report(tb_writer, iteration, loss_dict, elapsed, testing_iterations
                             layers = result["layers"]
                             for name, layer in layers.items():
                                 layer = torch.clamp(layer, 0.0, 1.0)
-                                tb_writer.add_images(config['name'] + "_view_{}/layer_{}".format(viewpoint.image_name, name), layer[None], global_step=iteration)
+                                tb_writer.add_images(config['name'] + "_view_{}/{}".format(viewpoint.image_name, name), layer[None], global_step=iteration)
 
                         if iteration == testing_iterations[0]:
                             tb_writer.add_images(config['name'] + "_view_{}/gt".format(viewpoint.image_name), gt_image[None], global_step=iteration)

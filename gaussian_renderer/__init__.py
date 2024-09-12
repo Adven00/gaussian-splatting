@@ -91,12 +91,13 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
             colors_precomp = colors_from_palette(pc.get_palette, palette_weights, pc.get_palette_offset, use_palette_offset)
 
             if use_specular:
+                shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
                 dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
                 dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
 
                 specular_precomp = torch.bmm(
-                    mlp(dir_pp_normalized).view(-1, 3, mlp.palette_size - 1).to(torch.float32),
-                    palette_weights[:, :-1, None]
+                    shs_view,
+                    mlp(dir_pp_normalized).view(-1, 16, 1).to(torch.float32),
                 ).squeeze()
 
                 colors_precomp += specular_precomp
@@ -109,6 +110,8 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                         new_palette_weights = torch.zeros_like(palette_weights, device="cuda")
                         new_palette_weights[:, i] = palette_weights[:, i]
                         colors_precomp_dict["layer{}".format(i)] = colors_from_palette(pc.get_palette, new_palette_weights, pc.get_palette_offset, use_palette_offset)
+                    colors_precomp_dict["offset"] = colors_from_palette(
+                        pc.get_palette, torch.zeros_like(palette_weights, device="cuda"), pc.get_palette_offset, use_palette_offset)
         else:
             assert False, "Invalid color compute mode {}!".format(pipe.color_compute_mode)
     else:
