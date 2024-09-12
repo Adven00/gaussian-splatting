@@ -40,8 +40,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         #BHY 保存分层渲染结果
         if pipeline.color_compute_mode == "palette":
             layers = result["layers"]
-            for i, layer in enumerate(layers):
-                torchvision.utils.save_image(layer, os.path.join(layers_path, '{0:05d}'.format(idx) + "_layer{}".format(i) +".png"))
+            for name, layer in layers.items():
+                torchvision.utils.save_image(layer, os.path.join(layers_path, '{0:05d}'.format(idx) + "_layer_{}".format(name) +".png"))
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
     with torch.no_grad():

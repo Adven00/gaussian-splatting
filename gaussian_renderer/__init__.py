@@ -13,12 +13,13 @@ import torch
 import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
+from scene.mlp_model import MLPModel
 from utils.sh_utils import eval_sh
 from utils.palette_utils import *
 
 #BHY 用 decompose_layer 控制是否分层渲染各种 gaussian 参数
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None,
-           decompose_layer=False, use_palette_offset=False):
+def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None,
+           decompose_layer=False, use_palette_offset=False, use_specular=False):
     """
     Render the scene. 
     
@@ -72,8 +73,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
     shs = None
     colors_precomp = None
+    specular_precomp = None
     #BHY 不同 layer 的 colors_precomp, 收集给各 layer 渲染用
-    colors_precomp_list = []
+    colors_precomp_dict = {}
     if override_color is None:
         if pipe.color_compute_mode == "sh_python":
             shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
@@ -88,13 +90,25 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             palette_weights = palette_weights_from_alpha(pc.get_alpha)
             colors_precomp = colors_from_palette(pc.get_palette, palette_weights, pc.get_palette_offset, use_palette_offset)
 
+            if use_specular:
+                dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
+                dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
+
+                specular_precomp = torch.bmm(
+                    mlp(dir_pp_normalized).view(-1, 3, mlp.palette_size - 1).to(torch.float32),
+                    palette_weights[:, :-1, None]
+                ).squeeze()
+
+                colors_precomp += specular_precomp
+                colors_precomp_dict["specular"] = specular_precomp
+
             #BHY 分解不同 layer 的 colors_precomp
             if decompose_layer:
                 with torch.no_grad(): 
                     for i in range(pc.get_palette.shape[0]):
                         new_palette_weights = torch.zeros_like(palette_weights, device="cuda")
                         new_palette_weights[:, i] = palette_weights[:, i]
-                        colors_precomp_list.append(colors_from_palette(pc.get_palette, new_palette_weights, pc.get_palette_offset, use_palette_offset))
+                        colors_precomp_dict["layer{}".format(i)] = colors_from_palette(pc.get_palette, new_palette_weights, pc.get_palette_offset, use_palette_offset)
         else:
             assert False, "Invalid color compute mode {}!".format(pipe.color_compute_mode)
     else:
@@ -113,6 +127,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     
     result = {
         "render": rendered_image,
+        "specular_precomp": specular_precomp,
         "viewspace_points": screenspace_points,
         "visibility_filter" : radii > 0,
         "radii": radii
@@ -121,8 +136,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     #BHY 渲染分解后的各 layer，开启 decompose_layer 才能启用
     if pipe.color_compute_mode == "palette" and decompose_layer:
         with torch.no_grad():    
-            layers = []
-            for colors_precomp in colors_precomp_list:
+            layers = {}
+            for name, colors_precomp in colors_precomp_dict.items():
                 layer, _ = rasterizer(
                     means3D = means3D,
                     means2D = means2D,
@@ -131,8 +146,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                     opacities = opacity,
                     scales = scales,
                     rotations = rotations,
-                    cov3D_precomp = cov3D_precomp)
-                layers.append(layer)
+                    cov3D_precomp = cov3D_precomp
+                )
+                layers[name] = layer
             result["layers"] = layers
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.

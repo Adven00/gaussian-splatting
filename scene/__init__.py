@@ -15,14 +15,16 @@ import json
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
+from scene.mlp_model import MLPModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 
 class Scene:
 
     gaussians : GaussianModel
+    mlp : MLPModel
 
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0]):
+    def __init__(self, args : ModelParams, gaussians : GaussianModel, mlp : MLPModel, load_iteration=None, shuffle=True, resolution_scales=[1.0]):
         """b
         :param path: Path to colmap scene main folder.
         """
@@ -30,6 +32,7 @@ class Scene:
         self.original_palette_path = None
         self.loaded_iter = None
         self.gaussians = gaussians
+        self.mlp = mlp
 
         if load_iteration:
             if load_iteration == -1:
@@ -88,6 +91,7 @@ class Scene:
         else:
             #BHY 传递 palette_path
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent, self.original_palette_path)
+            self.mlp.initialize(self.original_palette_path)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

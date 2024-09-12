@@ -15,7 +15,7 @@ from random import randint
 from utils.loss_utils import l1_loss, ssim, l2_loss
 from gaussian_renderer import render, network_gui
 import sys
-from scene import Scene, GaussianModel
+from scene import Scene, GaussianModel, MLPModel
 from utils.general_utils import safe_state
 import uuid
 from tqdm import tqdm
@@ -32,8 +32,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    #BHY 这里 gaissian 才真正初始化
-    scene = Scene(dataset, gaussians)
+    mlp = MLPModel()
+    #BHY 这里 gaissian 和 mlp 才真正初始化
+    scene = Scene(dataset, gaussians, mlp)
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -91,9 +92,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_palette_offset=(iteration > opt.palette_offset_from_iter))
+        render_pkg = render(viewpoint_cam, gaussians, mlp, pipe, bg, 
+                            use_palette_offset=(iteration > opt.palette_offset_from_iter),
+                            use_specular=(iteration > opt.specular_from_iter))
+        
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
+        specular_precomp = render_pkg["specular_precomp"]
         # Loss
         loss_dict = {}
 
@@ -112,9 +116,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             loss_dict["sparsity"] = sparsity_loss
 
         if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
-            palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset))
+            palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset)) * opt.lambda_palette_offset_loss
             loss_dict["palette_offset"] = palette_offset_loss
 
+        if opt.lambda_specular_loss > 0 and iteration > opt.specular_from_iter:
+            specular_loss = l2_loss(specular_precomp, torch.zeros_like(specular_precomp)) * opt.lambda_specular_loss
+            loss_dict["specular_loss"] = specular_loss
+            
         total_loss = sum(loss_dict.values())
         total_loss.backward()
         loss_dict["total"] = total_loss
@@ -132,13 +140,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # Log and save
             training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), testing_iterations, scene, render,
-                            (pipe, background, 1, None, True, (iteration > opt.palette_offset_from_iter)))
+                            (pipe, background, 1, None, True, (iteration > opt.palette_offset_from_iter), (iteration > opt.specular_from_iter)))
+            
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
 
             if (iteration - 1 == opt.palette_offset_from_iter):
                 print("\n[ITER {}] Add palette offset".format(iteration))
+
+            if (iteration - 1 == opt.specular_from_iter):
+                print("\n[ITER {}] Add specular".format(iteration))
 
             if (iteration - 1 == opt.palette_from_iter):
                 print("\n[ITER {}] Begin optimizing palette".format(iteration))
@@ -207,7 +219,7 @@ def training_report(tb_writer, iteration, loss_dict, elapsed, testing_iterations
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
 
                     #BHY 只在 test 的时候渲染各层，减少训练开销
-                    result = renderFunc(viewpoint, scene.gaussians, *renderArgs)
+                    result = renderFunc(viewpoint, scene.gaussians, scene.mlp, *renderArgs)
                     image = torch.clamp(result["render"], 0.0, 1.0)
 
                     if tb_writer and (idx < 5):
@@ -217,9 +229,9 @@ def training_report(tb_writer, iteration, loss_dict, elapsed, testing_iterations
                         # 显示各个 layer 的渲染结果
                         if renderArgs[0].color_compute_mode == "palette":
                             layers = result["layers"]
-                            for i, layer in enumerate(layers):
+                            for name, layer in layers.items():
                                 layer = torch.clamp(layer, 0.0, 1.0)
-                                tb_writer.add_images(config['name'] + "_view_{}/layer{}".format(viewpoint.image_name, i), layer[None], global_step=iteration)
+                                tb_writer.add_images(config['name'] + "_view_{}/layer_{}".format(viewpoint.image_name, name), layer[None], global_step=iteration)
 
                         if iteration == testing_iterations[0]:
                             tb_writer.add_images(config['name'] + "_view_{}/gt".format(viewpoint.image_name), gt_image[None], global_step=iteration)
