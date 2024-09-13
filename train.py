@@ -144,6 +144,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
+                print("\n[ITER {}] Saving Palette".format(iteration))
                 scene.save(iteration)
 
             if (iteration - 1 == opt.palette_offset_from_iter):

@@ -20,7 +20,8 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-from utils.palette_utils import rgb_to_hsv
+from utils.palette_utils import rgb_to_hsv, hsv_to_rgb
+from matplotlib import pyplot as plt
 
 class GaussianModel:
 
@@ -38,6 +39,7 @@ class GaussianModel:
 
         self.opacity_activation = torch.sigmoid
         self.alpha_activation = torch.sigmoid
+        self.offset_activation = torch.tanh
         self.inverse_opacity_activation = inverse_sigmoid
 
         self.rotation_activation = torch.nn.functional.normalize
@@ -128,7 +130,7 @@ class GaussianModel:
     @property
     def get_palette_offset(self):
         # return self._palette_offset
-        return torch.cat((self._palette_offset, 
+        return torch.cat((self.offset_activation(self._palette_offset) / 2, 
                           torch.zeros([self._palette_offset.shape[0], 1, 3], dtype=torch.float, device="cuda")), dim=1) 
     
     #BHY sigmoid(-x) = 1 - sigmoid(x)
@@ -397,8 +399,20 @@ class GaussianModel:
             self.palette_size = self._palette.shape[0] + 1
             print("Number of palette colors : {}".format(self.palette_size))
 
-    def save_palette(self, palette_path):
-        np.save(palette_path, self._palette.detach().cpu().numpy())
+    def save_palette(self, model_path):
+        palette_path = os.path.join(model_path, "rgb_palette.npy")
+        palette_fig_path = os.path.join(model_path, "rgb_palette.jpg")
+        palette = self._palette.detach().cpu().numpy()
+        np.save(palette_path, palette)
+
+        palette2 = np.ones((1 * 50, len(palette) * 50, 3))
+        for i in range(len(palette)):
+            palette2[:, i * 50:i * 50 + 50, :] = palette[i, :].reshape((1, 1, -1))
+    
+        plt.figure()
+        plt.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
+        plt.imshow(palette2)
+        plt.savefig(palette_fig_path)
 
     #BHY 目前只用于 opacity ，不用管
     def replace_tensor_to_optimizer(self, tensor, name):
