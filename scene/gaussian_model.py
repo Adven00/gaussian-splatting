@@ -372,7 +372,7 @@ class GaussianModel:
 
             palette_offset_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("p_offset_")]
             palette_offset_names = sorted(palette_offset_names, key = lambda x: int(x.split('_')[-1]))
-            assert len(palette_offset_names)==self.palette_size * 3
+            assert len(palette_offset_names)==(self.palette_size - 1) * 3
 
             palette_offset = np.zeros((xyz.shape[0], len(palette_offset_names)))
             for idx, attr_name in enumerate(palette_offset_names):
@@ -402,7 +402,7 @@ class GaussianModel:
     def save_palette(self, model_path):
         palette_path = os.path.join(model_path, "rgb_palette.npy")
         palette_fig_path = os.path.join(model_path, "rgb_palette.jpg")
-        palette = self._palette.detach().cpu().numpy()
+        palette = self.get_palette.detach().cpu().numpy()
         np.save(palette_path, palette)
 
         palette2 = np.ones((1 * 50, len(palette) * 50, 3))

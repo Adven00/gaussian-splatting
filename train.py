@@ -107,21 +107,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss_dict["image"] = image_loss
         loss_dict["l1"] = Ll1
 
-        if opt.lambda_palette_loss > 0 and iteration > opt.palette_from_iter:
-            palette_loss = l2_loss(orginal_palette[:-1], gaussians.get_palette[:-1]) * opt.lambda_palette_loss
-            loss_dict["palette"] = palette_loss
+        if pipe.color_compute_mode == "palette":
+            if opt.lambda_palette_loss > 0 and iteration > opt.palette_from_iter:
+                palette_loss = l2_loss(orginal_palette[:-1], gaussians.get_palette[:-1]) * opt.lambda_palette_loss
+                loss_dict["palette"] = palette_loss
 
-        if opt.lambda_sparsity_loss > 0:
-            sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
-            loss_dict["sparsity"] = sparsity_loss
+            if opt.lambda_sparsity_loss > 0:
+                sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
+                loss_dict["sparsity"] = sparsity_loss
 
-        if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
-            palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset)) * opt.lambda_palette_offset_loss
-            loss_dict["palette_offset"] = palette_offset_loss
+            if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
+                palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset)) * opt.lambda_palette_offset_loss
+                loss_dict["palette_offset"] = palette_offset_loss
 
-        if opt.lambda_specular_loss > 0 and iteration > opt.specular_from_iter:
-            specular_loss = l2_loss(specular_precomp, torch.zeros_like(specular_precomp)) * opt.lambda_specular_loss
-            loss_dict["specular_loss"] = specular_loss
+            if opt.lambda_specular_loss > 0 and iteration > opt.specular_from_iter:
+                specular_loss = l2_loss(specular_precomp, torch.zeros_like(specular_precomp)) * opt.lambda_specular_loss
+                loss_dict["specular_loss"] = specular_loss
             
         total_loss = sum(loss_dict.values())
         total_loss.backward()
@@ -144,7 +145,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
-                print("\n[ITER {}] Saving Palette".format(iteration))
+                if pipe.color_compute_mode == "palette":
+                    print("\n[ITER {}] Saving Palette".format(iteration))
                 scene.save(iteration)
 
             if (iteration - 1 == opt.palette_offset_from_iter):
@@ -154,7 +156,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Add specular".format(iteration))
 
             if (iteration - 1 == opt.palette_from_iter):
-                print("\n[ITER {}] Begin optimizing palette".format(iteration))
+                print("\n[ITER {}] Optimize palette".format(iteration))
 
             # Densification
             if iteration < opt.densify_until_iter:

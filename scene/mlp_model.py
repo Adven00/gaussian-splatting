@@ -38,8 +38,13 @@ class MLPModel(torch.nn.Module):
                 if m.bias is not None:
                     m.bias.data.fill_(0.0)
 
-    def capture(self):
-        return {
-            'model_state_dict': self.state_dict(),
+    def save(self, path):
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict()
-        }
+        }, path)
+    
+    def load(self, path):
+        checkpoint = torch.load(path)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

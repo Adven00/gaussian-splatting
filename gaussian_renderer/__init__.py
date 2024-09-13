@@ -110,8 +110,6 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                         new_palette_weights = torch.zeros_like(palette_weights, device="cuda")
                         new_palette_weights[:, i] = palette_weights[:, i]
                         colors_precomp_dict["layer{}".format(i)] = colors_from_palette(pc.get_palette, new_palette_weights, pc.get_palette_offset, use_palette_offset)
-                    # colors_precomp_dict["offset"] = colors_from_palette(
-                    #     pc.get_palette, torch.zeros_like(palette_weights, device="cuda"), pc.get_palette_offset, use_palette_offset)
         else:
             assert False, "Invalid color compute mode {}!".format(pipe.color_compute_mode)
     else:

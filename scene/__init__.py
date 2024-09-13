@@ -34,6 +34,7 @@ class Scene:
         self.gaussians = gaussians
         self.mlp = mlp
 
+        #BHY None: 不加载，创建初始化的场景用于训练 -1：加载默认轮次的模型
         if load_iteration:
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
@@ -88,6 +89,8 @@ class Scene:
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
+            self.mlp.initialize()
+            self.mlp.load(os.path.join(self.model_path, "mlp_chkpnt{}.pth".format(self.loaded_iter)))
         else:
             #BHY 传递 palette_path
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent, self.original_palette_path)
@@ -95,9 +98,9 @@ class Scene:
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
-        # palette_path = os.path.join(self.model_path, "rgb_palette.npy")
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
         self.gaussians.save_palette(self.model_path)
+        self.mlp.save(os.path.join(self.model_path, "mlp_chkpnt{}.pth".format(iteration)))
 
     def getTrainCameras(self, scale=1.0):
         return self.train_cameras[scale]
