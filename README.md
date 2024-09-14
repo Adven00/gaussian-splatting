@@ -3,11 +3,17 @@
 ## 训练
 
 所有参数使用默认值
+
 `python train.py -s <path_to_dataset> --iterations 10000 --eval`
 
 dataset 目录下要有 `rgb_palette.npy` 文件，可以用 `utils/palette_utils.py` 中的 `plot_palette_colors` 函数查看，训练完成后输出目录下也会有优化后的 palette 图片。
 
 由于权重自由度的原因，palette 最后一个颜色一定是黑色且不参与优化。如果自定义 palette 要注意这一点。
+
+高斯球颜色组成大致如下
+$$
+C= f \cdot \text{NeuralBasis}(dir) + \sum_i \omega_i (P_i+\delta_i)
+$$
 
 相比 3dgs 增加的参数有
 
