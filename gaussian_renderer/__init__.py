@@ -19,7 +19,7 @@ from utils.palette_utils import *
 
 #BHY 用 decompose_layer 控制是否分层渲染各种 gaussian 参数
 def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None,
-           decompose_layer=False, use_palette_offset=False, use_specular=False):
+           decompose_layer=False, use_palette_offset=False, use_specular=False, recolor_target=[-1, 0, 0, 0]):
     """
     Render the scene. 
     
@@ -88,7 +88,19 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
         #BHY palette 计算在这里
         elif pipe.color_compute_mode == "palette":
             palette_weights = palette_weights_from_alpha(pc.get_alpha)
-            colors_precomp = colors_from_palette(pc.get_palette, palette_weights, pc.get_palette_offset, use_palette_offset)
+            if use_palette_offset:
+                soft_palette = pc.get_soft_palette
+                if recolor_target[0] != -1:
+                    idx = int(recolor_target[0])
+                    hsv = rgb_to_hsv(soft_palette[:, idx])
+                    hsv[:, 0] = (hsv[:, 0] + recolor_target[1]) % 1
+                    hsv[:, 1:] = hsv[:, 1:] * torch.tensor(recolor_target[2:]).cuda()
+                    rgb = hsv_to_rgb(hsv)
+                    soft_palette[:, idx] = rgb
+
+                colors_precomp = (palette_weights[:, None] @ soft_palette).squeeze()
+            else:
+                colors_precomp = palette_weights @ pc.get_palette
 
             if use_specular:
                 shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
@@ -109,7 +121,11 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                     for i in range(pc.get_palette.shape[0]):
                         new_palette_weights = torch.zeros_like(palette_weights, device="cuda")
                         new_palette_weights[:, i] = palette_weights[:, i]
-                        colors_precomp_dict["layer{}".format(i)] = colors_from_palette(pc.get_palette, new_palette_weights, pc.get_palette_offset, use_palette_offset)
+
+                        if use_palette_offset:
+                            colors_precomp_dict["layer{}".format(i)] = (new_palette_weights[:, None] @ pc.get_soft_palette).squeeze()
+                        else:
+                            colors_precomp_dict["layer{}".format(i)] = new_palette_weights @ pc.get_palette
         else:
             assert False, "Invalid color compute mode {}!".format(pipe.color_compute_mode)
     else:

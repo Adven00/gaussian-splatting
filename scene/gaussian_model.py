@@ -143,6 +143,10 @@ class GaussianModel:
         return torch.cat((self._palette, torch.tensor([[0, 0, 0]], dtype=torch.float, device="cuda")), dim=0)
     
     @property
+    def get_soft_palette(self):
+        return self.get_palette + self.get_palette_offset
+    
+    @property
     def get_features(self):
         features_dc = self._features_dc
         features_rest = self._features_rest
@@ -413,6 +417,11 @@ class GaussianModel:
         plt.tick_params(left=False, right=False, labelleft=False, labelbottom=False, bottom=False)
         plt.imshow(palette2)
         plt.savefig(palette_fig_path)
+
+    def repalce_palette(self, index, target):
+        self._palette[index] = torch.tensor(target)
+        print("Repalce palette[{}] with {}".format(index, target))
+
 
     #BHY 目前只用于 opacity ，不用管
     def replace_tensor_to_optimizer(self, tensor, name):
