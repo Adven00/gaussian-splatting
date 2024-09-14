@@ -24,6 +24,10 @@ def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
     return gauss / gauss.sum()
 
+def smoothed_l0_loss(network_output, smooth_level):
+    sigmas = [1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01]
+    return (network_output.shape[1] - torch.exp(-torch.square(network_output) / (2 * sigmas[smooth_level]**2)).sum(dim=1)).mean()
+
 def create_window(window_size, channel):
     _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
     _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)

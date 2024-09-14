@@ -12,7 +12,7 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim, l2_loss
+from utils.loss_utils import l1_loss, ssim, l2_loss, smoothed_l0_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel, MLPModel
@@ -113,7 +113,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 loss_dict["palette"] = palette_loss
 
             if opt.lambda_sparsity_loss > 0:
-                sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
+                # sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
+                smooth_level = int(iteration / 1000) if int(iteration / 1000) <= 6 else 6
+                sparsity_loss = smoothed_l0_loss(gaussians.get_alpha, smooth_level)
                 loss_dict["sparsity"] = sparsity_loss
 
             if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
