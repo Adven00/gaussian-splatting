@@ -89,7 +89,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
         elif pipe.color_compute_mode == "palette":
             palette_weights = palette_weights_from_alpha(pc.get_alpha)
             if use_palette_offset:
-                soft_palette = pc.get_soft_palette
+                soft_palette = (pc.get_palette + pc.get_palette_offset) * pc.get_intensity[:, :, None]
                 if recolor_target[0] != -1:
                     idx = int(recolor_target[0])
                     hsv = rgb_to_hsv(soft_palette[:, idx])
@@ -115,6 +115,8 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                 colors_precomp += specular_precomp
                 colors_precomp_dict["specular"] = specular_precomp
 
+            colors_precomp = torch.clamp(colors_precomp, 0.0, 1.0)
+
             #BHY 分解不同 layer 的 colors_precomp
             if decompose_layer:
                 with torch.no_grad(): 
@@ -123,7 +125,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                         new_palette_weights[:, i] = palette_weights[:, i]
 
                         if use_palette_offset:
-                            colors_precomp_dict["layer{}".format(i)] = (new_palette_weights[:, None] @ pc.get_soft_palette).squeeze()
+                            colors_precomp_dict["layer{}".format(i)] = (new_palette_weights[:, None] @ soft_palette).squeeze()
                         else:
                             colors_precomp_dict["layer{}".format(i)] = new_palette_weights @ pc.get_palette
         else:

@@ -34,7 +34,7 @@ class MLPModel(torch.nn.Module):
         
         for m in self.modules():
             if isinstance(m, torch.nn.Linear):
-                torch.nn.init.zeros_(m.weight)
+                torch.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
                 if m.bias is not None:
                     m.bias.data.fill_(0.0)
 

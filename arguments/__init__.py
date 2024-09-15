@@ -84,6 +84,7 @@ class OptimizationParams(ParamGroup):
         self.alpha_lr = 0.0005
         #BHY 目前参照 palette nerf 设置, lambda 大于 0 代表使用该 loss
         self.palette_lr = 0.001
+        self.intensity_lr = 0.001
         self.palette_offset_lr = 0.001
 
         self.lambda_palette_offset_loss = 0.03
