@@ -58,7 +58,7 @@ class GaussianModel:
         # palette 不在 gaussian model 中优化
         self._alpha = torch.empty(0)
         self._palette = torch.empty(0)
-        self._palette_offset = torch.empty(0)
+        # self._palette_offset = torch.empty(0)
         self._intensity = torch.empty(0)
 
         self._scaling = torch.empty(0)
@@ -78,7 +78,7 @@ class GaussianModel:
             self._xyz,
             self._palette,
             self._alpha,
-            self._palette_offset,
+            # self._palette_offset,
             self._intensity,
             self._features_dc,
             self._features_rest,
@@ -97,7 +97,7 @@ class GaussianModel:
         self._xyz,
         self._alpha,
         self._palette,
-        self._palette_offset,
+        # self._palette_offset,
         self._intensity,
         self._features_dc, 
         self._features_rest,
@@ -131,11 +131,11 @@ class GaussianModel:
     def get_alpha(self):
         return self.alpha_activation(self._alpha)
     
-    @property
-    def get_palette_offset(self):
-        # return self._palette_offset
-        return torch.cat((self.offset_activation(self._palette_offset) / 2, 
-                          torch.zeros([self._palette_offset.shape[0], 1, 3], dtype=torch.float, device="cuda")), dim=1) 
+    # @property
+    # def get_palette_offset(self):
+    #     # return self._palette_offset
+    #     return torch.cat((self.offset_activation(self._palette_offset) / 2, 
+    #                       torch.zeros([self._palette_offset.shape[0], 1, 3], dtype=torch.float, device="cuda")), dim=1) 
     
     #BHY sigmoid(-x) = 1 - sigmoid(x)
     # @property
@@ -202,8 +202,8 @@ class GaussianModel:
             alpha = torch.zeros((fused_point_cloud.shape[0], self.palette_size - 1), device="cuda")
             self._alpha = nn.Parameter(alpha.requires_grad_(True))
             #BHY 初始化 palette_offset
-            palette_offset = torch.zeros((fused_point_cloud.shape[0], self.palette_size - 1, 3), device="cuda")
-            self._palette_offset = nn.Parameter(palette_offset.requires_grad_(True))
+            # palette_offset = torch.zeros((fused_point_cloud.shape[0], self.palette_size - 1, 3), device="cuda")
+            # self._palette_offset = nn.Parameter(palette_offset.requires_grad_(True))
             #BHY 初始化 intensity
             intensity = torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda")
             self._intensity = nn.Parameter(intensity.requires_grad_(True))
@@ -234,7 +234,7 @@ class GaussianModel:
         if self.palette_size != -1:
             l.append({'params': [self._alpha], 'lr': training_args.alpha_lr, "name": "alpha"})
             l.append({'params': [self._intensity], 'lr': training_args.intensity_lr, "name": "intensity"})
-            l.append({'params': [self._palette_offset], 'lr': training_args.palette_offset_lr, "name": "palette_offset"})
+            # l.append({'params': [self._palette_offset], 'lr': training_args.palette_offset_lr, "name": "palette_offset"})
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
@@ -318,7 +318,7 @@ class GaussianModel:
         if self.palette_size != -1:
             intensity = self._intensity.detach().cpu().numpy()
             alpha = self._alpha.detach().cpu().numpy()
-            palette_offset = self._palette_offset.detach().flatten(start_dim=1).contiguous().cpu().numpy()
+            # palette_offset = self._palette_offset.detach().flatten(start_dim=1).contiguous().cpu().numpy()
 
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
@@ -326,7 +326,8 @@ class GaussianModel:
         attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
 
         if self.palette_size != -1:
-            attributes = np.concatenate((attributes, alpha, palette_offset, intensity), axis=1)
+            # attributes = np.concatenate((attributes, alpha, palette_offset, intensity), axis=1)
+            attributes = np.concatenate((attributes, alpha, intensity), axis=1)
 
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
@@ -385,19 +386,19 @@ class GaussianModel:
             for idx, attr_name in enumerate(alpha_names):
                 alpha[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
-            palette_offset_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("p_offset_")]
-            palette_offset_names = sorted(palette_offset_names, key = lambda x: int(x.split('_')[-1]))
-            assert len(palette_offset_names)==(self.palette_size - 1) * 3
+            # palette_offset_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("p_offset_")]
+            # palette_offset_names = sorted(palette_offset_names, key = lambda x: int(x.split('_')[-1]))
+            # assert len(palette_offset_names)==(self.palette_size - 1) * 3
 
-            palette_offset = np.zeros((xyz.shape[0], len(palette_offset_names)))
-            for idx, attr_name in enumerate(palette_offset_names):
-                palette_offset[:, idx] = np.asarray(plydata.elements[0][attr_name])
-            palette_offset = palette_offset.reshape((-1, self.palette_size - 1, 3))
+            # palette_offset = np.zeros((xyz.shape[0], len(palette_offset_names)))
+            # for idx, attr_name in enumerate(palette_offset_names):
+            #     palette_offset[:, idx] = np.asarray(plydata.elements[0][attr_name])
+            # palette_offset = palette_offset.reshape((-1, self.palette_size - 1, 3))
 
             intensity = np.asarray(plydata.elements[0]["intensity"])[..., np.newaxis]
 
             self._intensity = nn.Parameter(torch.tensor(intensity, dtype=torch.float, device="cuda").requires_grad_(True))
-            self._palette_offset = nn.Parameter(torch.tensor(palette_offset, dtype=torch.float, device="cuda").requires_grad_(True))
+            # self._palette_offset = nn.Parameter(torch.tensor(palette_offset, dtype=torch.float, device="cuda").requires_grad_(True))
             self._alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float, device="cuda").requires_grad_(True))
 
         self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
@@ -482,7 +483,7 @@ class GaussianModel:
         if self.palette_size != -1:
             self._alpha = optimizable_tensors["alpha"]
             self._intensity = optimizable_tensors["intensity"]
-            self._palette_offset = optimizable_tensors["palette_offset"]
+            # self._palette_offset = optimizable_tensors["palette_offset"]
         self._features_dc = optimizable_tensors["f_dc"]
         self._features_rest = optimizable_tensors["f_rest"]
         self._opacity = optimizable_tensors["opacity"]
@@ -519,7 +520,7 @@ class GaussianModel:
         return optimizable_tensors
 
     #BHY 与高斯球的加密有关
-    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_alpha, new_intensity, new_palette_offset):
+    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_alpha, new_intensity):
         d = {"xyz": new_xyz,
         "opacity": new_opacities,
         "scaling" : new_scaling,
@@ -528,7 +529,7 @@ class GaussianModel:
         if self.palette_size != -1:
             d["alpha"] = new_alpha
             d["intensity"] = new_intensity
-            d["palette_offset"] = new_palette_offset
+            # d["palette_offset"] = new_palette_offset
         d["f_dc"] = new_features_dc
         d["f_rest"] = new_features_rest
 
@@ -538,7 +539,7 @@ class GaussianModel:
         if self.palette_size != -1:
             self._alpha = optimizable_tensors["alpha"]
             self._intensity = optimizable_tensors["intensity"]
-            self._palette_offset = optimizable_tensors["palette_offset"]
+            # self._palette_offset = optimizable_tensors["palette_offset"]
         self._features_dc = optimizable_tensors["f_dc"]
         self._features_rest = optimizable_tensors["f_rest"]
 
@@ -571,17 +572,17 @@ class GaussianModel:
         if self.palette_size != -1:
             new_alpha = self._alpha[selected_pts_mask].repeat(N,1)
             new_intensity = self._intensity[selected_pts_mask].repeat(N,1)
-            new_palette_offset = self._palette_offset[selected_pts_mask].repeat(N,1,1)
+            # new_palette_offset = self._palette_offset[selected_pts_mask].repeat(N,1,1)
         else:
             new_alpha = None
             new_intensity = None
-            new_palette_offset = None
+            # new_palette_offset = None
 
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
 
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_alpha, new_intensity, new_palette_offset)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_alpha, new_intensity)
 
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
@@ -600,16 +601,16 @@ class GaussianModel:
         if self.palette_size != -1:
             new_alpha = self._alpha[selected_pts_mask]
             new_intensity = self._intensity[selected_pts_mask]
-            new_palette_offset = self._palette_offset[selected_pts_mask]
+            # new_palette_offset = self._palette_offset[selected_pts_mask]
         else:
             new_alpha = None
             new_intensity = None
-            new_palette_offset = None
+            # new_palette_offset = None
 
         new_features_dc = self._features_dc[selected_pts_mask]
         new_features_rest = self._features_rest[selected_pts_mask]
             
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_alpha, new_intensity, new_palette_offset)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_alpha, new_intensity)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom

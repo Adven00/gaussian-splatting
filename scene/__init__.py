@@ -89,12 +89,12 @@ class Scene:
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
-            self.mlp.initialize()
+            self.mlp.initialize(os.path.join(self.model_path, "rgb_palette.npy"))
             self.mlp.load(os.path.join(self.model_path, "mlp_chkpnt{}.pth".format(self.loaded_iter)))
         else:
             #BHY 传递 palette_path
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent, self.original_palette_path)
-            self.mlp.initialize()
+            self.mlp.initialize(self.original_palette_path)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

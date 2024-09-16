@@ -85,15 +85,15 @@ class OptimizationParams(ParamGroup):
         #BHY 目前参照 palette nerf 设置, lambda 大于 0 代表使用该 loss
         self.palette_lr = 0.001
         self.intensity_lr = 0.001
-        self.palette_offset_lr = 0.001
+        # self.palette_offset_lr = 0.001
 
-        self.lambda_palette_offset_loss = 0.03
+        # self.lambda_palette_offset_loss = 0.03
         self.lambda_palette_loss = 0.01
         #BHY 默认关闭
-        self.lambda_specular_loss = -1.0
+        self.lambda_specular_loss = 0.03
         self.lambda_sparsity_loss = 0.0002
 
-        self.palette_offset_from_iter = 7000
+        # self.palette_offset_from_iter = 7000
         self.palette_from_iter = 1000
         self.specular_from_iter = 7000
 

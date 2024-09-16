@@ -19,7 +19,7 @@ from utils.palette_utils import *
 
 #BHY 用 decompose_layer 控制是否分层渲染各种 gaussian 参数
 def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None,
-           decompose_layer=False, use_palette_offset=False, use_specular=False, recolor_target=[-1, 0, 0, 0]):
+           decompose_layer=False, use_specular=False, recolor_target=[-1, 0, 0, 0]):
     """
     Render the scene. 
     
@@ -88,8 +88,20 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
         #BHY palette 计算在这里
         elif pipe.color_compute_mode == "palette":
             palette_weights = palette_weights_from_alpha(pc.get_alpha)
-            if use_palette_offset:
-                soft_palette = (pc.get_palette + pc.get_palette_offset)# * pc.get_intensity[:, :, None]
+            palette = pc.get_palette
+
+            if use_specular:
+                shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
+                dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
+                dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
+
+                palette_offset = torch.bmm(
+                    shs_view,
+                    mlp(dir_pp_normalized).view(-1, 16, palette.shape[0]).to(torch.float32),
+                ).squeeze().transpose(1, 2)
+
+                soft_palette = palette_offset + palette
+
                 if recolor_target[0] != -1:
                     idx = int(recolor_target[0])
                     hsv = rgb_to_hsv(soft_palette[:, idx])
@@ -99,35 +111,24 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                     soft_palette[:, idx] = rgb
 
                 colors_precomp = (palette_weights[:, None] @ soft_palette).squeeze()
-            else:
-                colors_precomp = palette_weights @ pc.get_palette
-
-            if use_specular:
-                shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
-                dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
-                dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
-
-                specular_precomp = torch.clamp_min(torch.bmm(
-                    shs_view,
-                    mlp(dir_pp_normalized).view(-1, 16, 1).to(torch.float32),
-                ).squeeze(), 0.0)
-
-                colors_precomp += specular_precomp
+                specular_precomp = (palette_weights[:, None] @ palette_offset).squeeze()
                 colors_precomp_dict["specular"] = specular_precomp
+            else:
+                colors_precomp = palette_weights @ palette
 
             colors_precomp = torch.clamp(colors_precomp, 0.0, 1.0)
 
             #BHY 分解不同 layer 的 colors_precomp
             if decompose_layer:
                 with torch.no_grad(): 
-                    for i in range(pc.get_palette.shape[0]):
+                    for i in range(palette.shape[0]):
                         new_palette_weights = torch.zeros_like(palette_weights, device="cuda")
                         new_palette_weights[:, i] = palette_weights[:, i]
 
-                        if use_palette_offset:
+                        if use_specular:
                             colors_precomp_dict["layer{}".format(i)] = (new_palette_weights[:, None] @ soft_palette).squeeze()
                         else:
-                            colors_precomp_dict["layer{}".format(i)] = new_palette_weights @ pc.get_palette
+                            colors_precomp_dict["layer{}".format(i)] = new_palette_weights @ palette
         else:
             assert False, "Invalid color compute mode {}!".format(pipe.color_compute_mode)
     else:

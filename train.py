@@ -93,7 +93,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         render_pkg = render(viewpoint_cam, gaussians, mlp, pipe, bg, 
-                            use_palette_offset=(iteration > opt.palette_offset_from_iter),
+                            # use_palette_offset=(iteration > opt.palette_offset_from_iter),  
                             use_specular=(iteration > opt.specular_from_iter))
         
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
@@ -118,9 +118,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 sparsity_loss = smoothed_l0_loss(gaussians.get_alpha, smooth_level)
                 loss_dict["sparsity"] = sparsity_loss
 
-            if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
-                palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset)) * opt.lambda_palette_offset_loss
-                loss_dict["palette_offset"] = palette_offset_loss
+            # if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
+            #     palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset)) * opt.lambda_palette_offset_loss
+            #     loss_dict["palette_offset"] = palette_offset_loss
 
             if opt.lambda_specular_loss > 0 and iteration > opt.specular_from_iter:
                 specular_loss = l2_loss(specular_precomp, torch.zeros_like(specular_precomp)) * opt.lambda_specular_loss
@@ -143,7 +143,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # Log and save
             training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), testing_iterations, scene, render,
-                            (pipe, background, 1, None, True, (iteration > opt.palette_offset_from_iter), (iteration > opt.specular_from_iter)))
+                            (pipe, background, 1, None, True, (iteration > opt.specular_from_iter)))
             
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
@@ -151,8 +151,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     print("\n[ITER {}] Saving Palette".format(iteration))
                 scene.save(iteration)
 
-            if (iteration - 1 == opt.palette_offset_from_iter):
-                print("\n[ITER {}] Add palette offset".format(iteration))
+            # if (iteration - 1 == opt.palette_offset_from_iter):
+            #     print("\n[ITER {}] Add palette offset".format(iteration))
 
             if (iteration - 1 == opt.specular_from_iter):
                 print("\n[ITER {}] Add specular".format(iteration))

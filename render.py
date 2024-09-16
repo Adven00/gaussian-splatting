@@ -33,7 +33,7 @@ def render_set(model_path, name, iteration, views, gaussians, mlp, pipeline, bac
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         result = render(view, gaussians, mlp, pipeline, background,
-                        decompose_layer=(pipeline.color_compute_mode == "palette"), use_palette_offset=True, use_specular=True, recolor_target=recolor_target)
+                        decompose_layer=(pipeline.color_compute_mode == "palette"), use_specular=True, recolor_target=recolor_target)
         rendering = result["render"]
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
