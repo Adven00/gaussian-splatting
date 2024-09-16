@@ -89,7 +89,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
         elif pipe.color_compute_mode == "palette":
             palette_weights = palette_weights_from_alpha(pc.get_alpha)
             if use_palette_offset:
-                soft_palette = (pc.get_palette + pc.get_palette_offset) * pc.get_intensity[:, :, None]
+                soft_palette = (pc.get_palette + pc.get_palette_offset)# * pc.get_intensity[:, :, None]
                 if recolor_target[0] != -1:
                     idx = int(recolor_target[0])
                     hsv = rgb_to_hsv(soft_palette[:, idx])
