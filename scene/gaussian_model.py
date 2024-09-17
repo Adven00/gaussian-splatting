@@ -297,8 +297,8 @@ class GaussianModel:
             for i in range(self._alpha.shape[1]):
                 l.append('alpha_{}'.format(i))
 
-            for i in range(self._palette_offset.shape[1]*3):
-                l.append('p_offset_{}'.format(i))
+            # for i in range(self._palette_offset.shape[1]*3):
+            #     l.append('p_offset_{}'.format(i))
 
             l.append('intensity')
         return l
