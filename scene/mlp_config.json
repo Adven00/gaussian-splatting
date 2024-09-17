@@ -13,7 +13,7 @@
 		"otype": "FullyFusedMLP",
 		"activation": "LeakyReLU",
 		"output_activation": "Tanh",
-		"n_neurons": 48,
+		"n_neurons": 32,
 		"n_hidden_layers": 2
 	}
 }
