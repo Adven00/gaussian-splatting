@@ -22,10 +22,10 @@ class MLPModel(torch.nn.Module):
         else:
             return
 
-        print("MLP output dim : {}".format(self.palette_size * 16))
+        print("MLP output dim : {}".format((self.palette_size - 1) * 16))
 
         self.model = tcnn.NetworkWithInputEncoding(
-            n_input_dims=3, n_output_dims=self.palette_size * 16,
+            n_input_dims=3, n_output_dims=(self.palette_size - 1) * 16,
             encoding_config=self.config["encoding"], 
             network_config=self.config["network"]
         ).to(torch.device("cuda"))
