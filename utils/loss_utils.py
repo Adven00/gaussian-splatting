@@ -26,7 +26,7 @@ def gaussian(window_size, sigma):
 
 def smoothed_l0_loss(network_output, smooth_level):
     sigmas = [1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01]
-    return (network_output.shape[1] - torch.exp(-torch.square(network_output) / (2 * sigmas[smooth_level]**2)).sum(dim=1)).mean()
+    return (((network_output.shape[1] - torch.exp(-torch.square(network_output) / (2 * sigmas[smooth_level]**2)).sum(dim=1))) ** 2).mean()
 
 def create_window(window_size, channel):
     _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
