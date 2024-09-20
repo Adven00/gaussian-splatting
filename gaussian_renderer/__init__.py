@@ -91,13 +91,13 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
             palette = pc.get_palette
 
             if use_specular:
-                shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
+                shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)[:, :, :8]
                 dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
                 dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
 
                 palette_offset = torch.bmm(
                     shs_view,
-                    mlp(dir_pp_normalized).view(-1, 16, palette.shape[0] - 1).to(torch.float32),
+                    mlp(dir_pp_normalized).view(-1, 8, palette.shape[0] - 1).to(torch.float32),
                 ).squeeze().transpose(1, 2)
 
                 palette_offset = torch.cat((palette_offset, torch.zeros([palette_offset.shape[0], 1, 3], dtype=torch.float, device="cuda")), dim=1)
@@ -113,8 +113,8 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                     soft_palette[:, idx] = rgb
 
                 colors_precomp = (palette_weights[:, None] @ soft_palette).squeeze()
-                specular_precomp = (palette_weights[:, None] @ palette_offset).squeeze()
-                colors_precomp_dict["specular"] = specular_precomp
+                # specular_precomp = (palette_weights[:, None] @ palette_offset).squeeze()
+                # colors_precomp_dict["specular"] = specular_precomp
             else:
                 colors_precomp = palette_weights @ palette
 

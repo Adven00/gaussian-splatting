@@ -81,7 +81,7 @@ class OptimizationParams(ParamGroup):
         self.position_lr_max_steps = 30_000
         #BHY 设置学习率
         # 设置为与 feature_lr 相同时 loss 先降后升，效果不好
-        self.alpha_lr = 0.0005
+        self.alpha_lr = 0.0008
         #BHY 目前参照 palette nerf 设置, lambda 大于 0 代表使用该 loss
         self.palette_lr = 0.001
         self.intensity_lr = 0.001
@@ -99,7 +99,7 @@ class OptimizationParams(ParamGroup):
 
         self.sparsity_interval = 1000
 
-        self.feature_lr = 0.0025
+        self.feature_lr = 0.01
         self.opacity_lr = 0.05
         self.scaling_lr = 0.005
         self.rotation_lr = 0.001
