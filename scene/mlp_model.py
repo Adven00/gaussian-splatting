@@ -5,11 +5,12 @@ import numpy as np
 import os
 
 class MLPModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, mlp_degree):
         super().__init__()
         with open("scene/mlp_config.json") as config_file:
             self.config = json.load(config_file)
         self.palette_size = -1
+        self.mlp_degree = mlp_degree
     
     def forward(self, dir_pp_normalized):
         out_basis = self.model(dir_pp_normalized)
@@ -22,10 +23,10 @@ class MLPModel(torch.nn.Module):
         else:
             return
 
-        print("MLP output dim : {}".format((self.palette_size - 1) * 8))
+        print("MLP output dim : {}".format((self.palette_size - 1) * self.mlp_degree))
 
         self.model = tcnn.NetworkWithInputEncoding(
-            n_input_dims=3, n_output_dims=(self.palette_size - 1) * 8,
+            n_input_dims=3, n_output_dims=(self.palette_size - 1) * self.mlp_degree,
             encoding_config=self.config["encoding"], 
             network_config=self.config["network"]
         ).to(torch.device("cuda"))

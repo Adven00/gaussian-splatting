@@ -48,7 +48,7 @@ def render_set(model_path, name, iteration, views, gaussians, mlp, pipeline, bac
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, recolor_target):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree)
-        mlp = MLPModel()
+        mlp = MLPModel(dataset.mlp_degree)
         scene = Scene(dataset, gaussians, mlp, load_iteration=iteration, shuffle=False)
         if recolor_target[0] != -1:
             target_idx = int(recolor_target[0])

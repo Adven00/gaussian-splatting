@@ -32,7 +32,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    mlp = MLPModel()
+    mlp = MLPModel(dataset.mlp_degree)
     #BHY 这里 gaissian 和 mlp 才真正初始化
     scene = Scene(dataset, gaussians, mlp)
     gaussians.training_setup(opt)
