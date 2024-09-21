@@ -41,7 +41,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gaussians.restore(model_params, opt)
 
     #BHY 分离出原始 palette ，与 gaussians 中的在梯度或数据上没有任何关系
-    orginal_palette = gaussians.get_palette.clone().detach()
+    if pipe.color_compute_mode == "palette":
+        orginal_palette = gaussians.get_palette.clone().detach()
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
@@ -178,9 +179,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
 
-                if iteration > opt.specular_from_iter:
-                    mlp.optimizer.step()
-                    mlp.optimizer.zero_grad(set_to_none = True)
+                if pipe.color_compute_mode == "palette":
+                    if iteration > opt.specular_from_iter:
+                        mlp.optimizer.step()
+                        mlp.optimizer.zero_grad(set_to_none = True)
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
