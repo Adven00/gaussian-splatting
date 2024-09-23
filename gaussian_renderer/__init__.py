@@ -19,7 +19,7 @@ from utils.palette_utils import *
 
 #BHY 用 decompose_layer 控制是否分层渲染各种 gaussian 参数
 def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None,
-           decompose_layer=False, use_specular=False, recolor_target=[-1, 0, 0, 0]):
+           decompose_layer=False, use_specular=False, recolor=[-1, 0, 0, 0, 0]):
     """
     Render the scene. 
     
@@ -104,16 +104,16 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
 
                 soft_palette = palette_offset + palette
 
-                if recolor_target[0] != -1:
-                    idx = int(recolor_target[0])
+                if recolor[0] != -1 and recolor[4] == 0:
+                    idx = int(recolor[0])
                     hsv = rgb_to_hsv(soft_palette[:, idx])
-                    hsv[:, 0] = (hsv[:, 0] + recolor_target[1]) % 1
-                    hsv[:, 1:] = hsv[:, 1:] * torch.tensor(recolor_target[2:]).cuda()
+                    hsv[:, 0] = (hsv[:, 0] + recolor[1]) % 1
+                    hsv[:, 1:] = hsv[:, 1:] * torch.tensor(recolor[2:4]).cuda()
                     rgb = hsv_to_rgb(hsv)
                     soft_palette[:, idx] = rgb
 
                 colors_precomp = (palette_weights[:, None] @ soft_palette).squeeze()
-                # specular_precomp = (palette_weights[:, None] @ palette_offset).squeeze()
+                specular_precomp = (palette_weights[:, None] @ palette_offset).squeeze()
                 # colors_precomp_dict["specular"] = specular_precomp
             else:
                 colors_precomp = palette_weights @ palette
