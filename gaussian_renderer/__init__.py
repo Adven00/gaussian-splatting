@@ -113,7 +113,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                     soft_palette[:, idx] = rgb
 
                 colors_precomp = (palette_weights[:, None] @ soft_palette).squeeze()
-                specular_precomp = (palette_weights[:, None] @ palette_offset).squeeze()
+                # specular_precomp = (palette_weights[:, None] @ palette_offset).squeeze()
                 # colors_precomp_dict["specular"] = specular_precomp
             else:
                 colors_precomp = palette_weights @ palette

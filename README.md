@@ -12,7 +12,7 @@ dataset 目录下要有 `rgb_palette.npy` 文件，可以用 `utils/palette_util
 
 高斯球颜色组成大致如下
 $$
-C= f \cdot \text{NeuralBasis}(dir) + \sum_i \omega_i (P_i+\delta_i)
+C= \sum_i \omega_i (P_i+\sum_j f_j \cdot \text{NB}_j(dir))
 $$
 
 相比 3dgs 增加的参数有
@@ -21,20 +21,25 @@ $$
 // palette 参数相关的学习率
 --alpha_lr  0.0005
 --palette_lr  0.001
---palette_offset_lr  0.001
+
+// neural baisi 的个数
+--mlp_degree 8
+
+// smooth L_0 loss 的 sigma 下降速度
+// 参见论文 Fast Sparse Representation Based on Smoothed ℓ0 Norm
+// 这个参数对分离效果影响很大
+--sparsity_interval 1000
 
 // 相关 loss 的系数
 // 如果某个 loss 不想使用，设 lambda 为负数
---lambda_palette_offset_loss  0.03
 --lambda_palette_loss  0.01
 --lambda_specular_loss  -1
 --lambda_sparsity_loss  0.0002
 
 // 从哪一次迭代开始这些操作
 // 如果不想使用，设成一个很大的数即可
---palette_offset_from_iter  7000 // 为每个高斯球的 palette 增加 offset
 --palette_from_iter  1000 // 将 palette 本身加入优化
---specular_from_iter  7000 // 为每个高斯球增加各向异性高光（未优化，可能占用大量显存）
+--specular_from_iter  7000 // 为每个高斯球增加各向异性高光（占用大量显存）
 ```
 
 ## 渲染和重着色
@@ -46,6 +51,7 @@ $$
 ```c
 // 训练完成后输出目录下会有优化后的 palette 图片
 // 将 index 位置（从 0 起）的 palette color 重着色为 r g b
-// 不是直接替换，做法参见 PaletteNeRF Suplementary
---recolor_target <index r g b>
+// mode 是重着色模式，0 为 hsv 空间，1 为 rgb 直接替换，一般用 0
+// 参见 PaletteNeRF Suplementary
+--recolor_target <index r g b mode>
 ```
