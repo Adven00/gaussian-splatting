@@ -116,7 +116,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if opt.lambda_sparsity_loss > 0:
                 # sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
                 smooth_level = int(iteration / opt.sparsity_interval) if int(iteration / opt.sparsity_interval) <= 6 else 6
-                sparsity_loss = smoothed_l0_loss(gaussians.get_alpha, smooth_level)
+                sparsity_loss = smoothed_l0_loss(gaussians.get_alpha, smooth_level) * opt.lambda_sparsity_loss
                 loss_dict["sparsity"] = sparsity_loss
 
             # if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
