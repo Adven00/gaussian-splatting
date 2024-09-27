@@ -91,7 +91,7 @@ class OptimizationParams(ParamGroup):
         # self.lambda_palette_offset_loss = 0.03
         self.lambda_palette_loss = 0.01
         #BHY 默认关闭
-        self.lambda_specular_loss = 0.02
+        self.lambda_specular_loss = -1.0
         self.lambda_sparsity_loss = 0.02
 
         # self.palette_offset_from_iter = 7000
