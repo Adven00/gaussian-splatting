@@ -146,7 +146,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), testing_iterations, scene, render,
                             (pipe, background, 1, None, True, (iteration > opt.specular_from_iter)))
             
-            if (iteration in saving_iterations):
+            if (iteration in saving_iterations or iteration - 1 == opt.specular_from_iter):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 if pipe.color_compute_mode == "palette":
                     print("\n[ITER {}] Saving Palette".format(iteration))
