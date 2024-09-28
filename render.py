@@ -21,10 +21,12 @@ from argparse import ArgumentParser
 import colorsys
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel, MLPModel
+from kornia.color import lab_to_rgb, rgb_to_lab
 
 def render_set(model_path, name, iteration, views, gaussians, mlp, pipeline, background, recolor):
     if recolor[0] != -1:
-        method_name = ("HSV_{}_" if recolor[4] == 0 else "RGB_{}_").format(int(recolor[0])) + "_".join(['{:.2f}'.format(x) for x in recolor[1:4]])
+        method_name = ("HSV_{}_" if recolor[4] == 0 else ("RGB_{}_" if recolor[4] == 1 else "LAB_{}_")) \
+            .format(int(recolor[0])) + "_".join(['{:.2f}'.format(x) for x in recolor[1:4]])
     else:
         method_name = "original"
     render_path = os.path.join(model_path, name, method_name, "renders")
@@ -64,6 +66,12 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
             elif recolor[4] == 1:
                 gaussians._palette[int(recolor[0])] = torch.tensor(recolor[1:4]).cuda()
                 print("Replace palette[{}] with {} in RGB space".format(int(recolor[0]), recolor[1:4]))
+            elif recolor[4] == 2:
+                target_idx = int(recolor[0])
+                lab_target = rgb_to_lab(torch.tensor(recolor[1:4])[None, :, None, None]).squeeze().cuda()
+                lab_original = rgb_to_lab(gaussians.get_palette[target_idx][None, :, None, None]).squeeze()
+                recolor[1:4] = (lab_target - lab_original).tolist()
+                print("Edit palette[{}] with diff {} in LAB space".format(target_idx, recolor[1:4]))
         
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
@@ -83,7 +91,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
-    #BHY recolor 参数：palette_idx(-1:don't recolor), new_r, new_g, new_b, mode(0:repalce, 1:modify in hsv)
+    #BHY recolor 参数：palette_idx(-1:don't recolor), new_r, new_g, new_b, mode(0:modify in hsv, 1:replace in rgb, 2:modify in LAB)
     parser.add_argument("--recolor", nargs=5, type=float, default=[-1, 0.0, 0.0, 0.0, 0])
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)

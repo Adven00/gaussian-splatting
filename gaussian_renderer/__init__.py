@@ -16,6 +16,7 @@ from scene.gaussian_model import GaussianModel
 from scene.mlp_model import MLPModel
 from utils.sh_utils import eval_sh
 from utils.palette_utils import *
+from kornia.color import lab_to_rgb, rgb_to_lab
 
 #BHY 用 decompose_layer 控制是否分层渲染各种 gaussian 参数
 def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None,
@@ -103,20 +104,28 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                 # palette_offset = torch.cat((palette_offset, torch.zeros([palette_offset.shape[0], 1, 3], dtype=torch.float, device="cuda")), dim=1)
                 offset_index = torch.max(pc.get_alpha, 1)[1]
                 soft_palette = palette.repeat(palette_weights.shape[0], 1, 1)
-                soft_palette[torch.arange(soft_palette.shape[0]), offset_index] += palette_offset
+                soft_palette_lab = rgb_to_lab(soft_palette.transpose(1, 2)[:, :, :, None]).squeeze()
+                soft_palette_lab[torch.arange(soft_palette.shape[0]), torch.zeros_like(offset_index), offset_index] += palette_offset[:, 0] * 100
+                soft_palette_lab[torch.arange(soft_palette.shape[0]), torch.zeros_like(offset_index), -1] += palette_offset[:, 1] * 100
+                soft_palette = lab_to_rgb(soft_palette_lab[:, :, :, None]).transpose(1, 2).squeeze()
 
-                if recolor[0] != -1 and recolor[4] == 0:
-                    idx = int(recolor[0])
-                    hsv = rgb_to_hsv(soft_palette[:, idx])
-                    hsv[:, 0] = (hsv[:, 0] + recolor[1]) % 1
-                    hsv[:, 1:] = hsv[:, 1:] * torch.tensor(recolor[2:4]).cuda()
-                    rgb = hsv_to_rgb(hsv)
-                    soft_palette[:, idx] = rgb
+                if recolor[0] != -1:
+                    if recolor[4] == 0:
+                        idx = int(recolor[0])
+                        hsv = rgb_to_hsv(soft_palette[:, idx])
+                        hsv[:, 0] = (hsv[:, 0] + recolor[1]) % 1
+                        hsv[:, 1:] = hsv[:, 1:] * torch.tensor(recolor[2:4]).cuda()
+                        rgb = hsv_to_rgb(hsv)
+                        soft_palette[:, idx] = rgb
+                    if recolor[4] == 2:
+                        idx = int(recolor[0])
+                        soft_palette_lab[torch.arange(soft_palette.shape[0]), :, idx] += torch.tensor(recolor[1:4]).cuda()
+                        soft_palette = lab_to_rgb(soft_palette_lab[:, :, :, None]).transpose(1, 2).squeeze()
 
                 colors_precomp = (palette_weights[:, None] @ soft_palette).squeeze()
                 # specular_precomp = (palette_weights[:, None] @ palette_offset).squeeze()
                 # colors_precomp_dict["specular"] = specular_precomp
-                colors_precomp_dict["specular"] = palette_offset
+                # colors_precomp_dict["specular"] = palette_offset
             else:
                 colors_precomp = palette_weights @ palette
 
