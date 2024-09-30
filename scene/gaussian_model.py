@@ -144,7 +144,7 @@ class GaussianModel:
     
     @property
     def get_palette(self):
-        return torch.cat((self._palette, torch.tensor([[0, 0, 0]], dtype=torch.float, device="cuda")), dim=0)
+        return torch.clamp(torch.cat((self._palette, torch.tensor([[0, 0, 0]], dtype=torch.float, device="cuda")), dim=0), 0, 1)
     
     @property
     def get_intensity(self):
