@@ -380,7 +380,7 @@ class GaussianModel:
         if self.palette_size != -1:
             alpha_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("alpha_")]
             alpha_names = sorted(alpha_names, key = lambda x: int(x.split('_')[-1]))
-            assert len(alpha_names)==self.palette_size - 1
+            # assert len(alpha_names)==self.palette_size - 1
 
             alpha = np.zeros((xyz.shape[0], len(alpha_names)))
             for idx, attr_name in enumerate(alpha_names):
@@ -395,9 +395,9 @@ class GaussianModel:
             #     palette_offset[:, idx] = np.asarray(plydata.elements[0][attr_name])
             # palette_offset = palette_offset.reshape((-1, self.palette_size - 1, 3))
 
-            intensity = np.asarray(plydata.elements[0]["intensity"])[..., np.newaxis]
+            # intensity = np.asarray(plydata.elements[0]["intensity"])[..., np.newaxis]
 
-            self._intensity = nn.Parameter(torch.tensor(intensity, dtype=torch.float, device="cuda").requires_grad_(True))
+            # self._intensity = nn.Parameter(torch.tensor(intensity, dtype=torch.float, device="cuda").requires_grad_(True))
             # self._palette_offset = nn.Parameter(torch.tensor(palette_offset, dtype=torch.float, device="cuda").requires_grad_(True))
             self._alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float, device="cuda").requires_grad_(True))
 

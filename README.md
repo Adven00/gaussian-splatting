@@ -34,7 +34,7 @@ $$
 // 如果某个 loss 不想使用，设 lambda 为负数
 --lambda_palette_loss  0.01
 --lambda_specular_loss  -1
---lambda_sparsity_loss  0.0002
+--lambda_sparsity_loss  0.02
 
 // 从哪一次迭代开始这些操作
 // 如果不想使用，设成一个很大的数即可
