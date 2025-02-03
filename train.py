@@ -28,7 +28,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -143,10 +143,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), testing_iterations, scene, render,
+            training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), test_iterations, scene, render,
                             (pipe, background, 1, None, True, (iteration > opt.specular_from_iter)))
             
-            if (iteration in saving_iterations or iteration - 1 == opt.specular_from_iter):
+            if (iteration in save_iterations or iteration - 1 == opt.specular_from_iter):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 if pipe.color_compute_mode == "palette":
                     print("\n[ITER {}] Saving Palette".format(iteration))
@@ -210,14 +210,14 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, loss_dict, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs):
+def training_report(tb_writer, iteration, loss_dict, elapsed, test_iterations, scene : Scene, renderFunc, renderArgs):
     if tb_writer:
         for name, loss in loss_dict.items():
             tb_writer.add_scalar('train_loss_patches/' + name, loss.item(), iteration)
         tb_writer.add_scalar('iter_time', elapsed, iteration)
 
     # Report test and samples of training set
-    if iteration in testing_iterations:
+    if iteration in test_iterations:
         torch.cuda.empty_cache()
         validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
                               {'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
@@ -244,7 +244,7 @@ def training_report(tb_writer, iteration, loss_dict, elapsed, testing_iterations
                                 layer = torch.clamp(layer, 0.0, 1.0)
                                 tb_writer.add_images(config['name'] + "_view_{}/{}".format(viewpoint.image_name, name), layer[None], global_step=iteration)
 
-                        if iteration == testing_iterations[0]:
+                        if iteration == test_iterations[0]:
                             tb_writer.add_images(config['name'] + "_view_{}/gt".format(viewpoint.image_name), gt_image[None], global_step=iteration)
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
@@ -271,8 +271,8 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    #BHY 改成每 2000 次测试一次
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=list(range(2000, 200000, 2000)))
+    #BHY 频繁 test 会导致显存不够！必要时取消掉
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=list(range(2000, 200000, 10000)))
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])

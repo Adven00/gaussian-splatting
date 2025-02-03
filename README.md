@@ -51,7 +51,7 @@ $$
 ```c
 // 训练完成后输出目录下会有优化后的 palette 图片
 // 将 index 位置（从 0 起）的 palette color 重着色为 r g b
-// mode 是重着色模式，0 为 hsv 空间，1 为 rgb 直接替换，一般用 0
+// mode 是重着色模式，0 为 hsv 空间，1 为 rgb 直接替换，2 为 lab 空间
 // 参见 PaletteNeRF Suplementary
---recolor_target <index r g b mode>
+--recolor <index r g b mode>
 ```

@@ -14,3 +14,4 @@ screenshots
 data/
 viewers/
 data_palette/
+__pycache__
