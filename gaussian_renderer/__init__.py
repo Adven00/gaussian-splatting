@@ -74,7 +74,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
     shs = None
     colors_precomp = None
-    specular_precomp = None
+    # specular_precomp = None
     #BHY 不同 layer 的 colors_precomp, 收集给各 layer 渲染用
     colors_precomp_dict = {}
     if override_color is None:
@@ -160,7 +160,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
     
     result = {
         "render": rendered_image,
-        "specular_precomp": specular_precomp,
+        # "specular_precomp": specular_precomp,
         "viewspace_points": screenspace_points,
         "visibility_filter" : radii > 0,
         "radii": radii

@@ -44,7 +44,7 @@ $$
 
 ## 渲染和重着色
 
-`python render.py -m .\output\c340b1fd-6 --eval --recolor_target 2 0 0 1`
+`python render.py -m .\output\c340b1fd-6 --eval --recolor 2 0 0 1`
 
 相比 3dgs 增加的参数有
 
@@ -55,3 +55,9 @@ $$
 // 参见 PaletteNeRF Suplementary
 --recolor <index r g b mode>
 ```
+
+## palette 提取
+
+`python extract.py -m .\output\garden\3D-GS --normalize`
+
+注意，只能从训练好的，未使用 palette 的高斯点云中提取（`color_compute_mode = sh_cuda`），颜色来自 0 阶球谐。输出 `extracted_rgb_palette.jpg` 和 `extracted_rgb_palette.npy` 。

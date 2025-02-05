@@ -84,23 +84,26 @@ class Scene:
 
         if self.loaded_iter:
             #BHY 要先 load palette
-            self.gaussians.load_palette(os.path.join(self.model_path, "rgb_palette.npy"))
+            palette_path = os.path.join(self.model_path, "rgb_palette.npy")
+            if os.path.exists(palette_path):
+                self.gaussians.load_palette(os.path.join(self.model_path, "rgb_palette.npy"))
+                self.mlp.initialize(os.path.join(self.model_path, "rgb_palette.npy"))
+                self.mlp.load(os.path.join(self.model_path, "mlp_chkpnt{}.pth".format(self.loaded_iter)))
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
-            self.mlp.initialize(os.path.join(self.model_path, "rgb_palette.npy"))
-            self.mlp.load(os.path.join(self.model_path, "mlp_chkpnt{}.pth".format(self.loaded_iter)))
         else:
             #BHY 传递 palette_path
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent, self.original_palette_path)
             self.mlp.initialize(self.original_palette_path)
 
-    def save(self, iteration):
+    def save(self, iteration, save_palette_and_mlp=True):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
-        self.gaussians.save_palette(self.model_path)
-        self.mlp.save(os.path.join(self.model_path, "mlp_chkpnt{}.pth".format(iteration)))
+        if save_palette_and_mlp:
+            self.gaussians.save_palette(self.model_path)
+            self.mlp.save(os.path.join(self.model_path, "mlp_chkpnt{}.pth".format(iteration)))
 
     def getTrainCameras(self, scale=1.0):
         return self.train_cameras[scale]

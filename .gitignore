@@ -2,6 +2,7 @@
 *.ipynb
 *.bat
 *.sh
+*.egg-info
 .vscode
 output
 data
@@ -12,6 +13,7 @@ diff_rasterization/dist
 tensorboard_3d
 screenshots
 data/
+tmp/
 viewers/
 data_palette/
 __pycache__

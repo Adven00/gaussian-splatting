@@ -150,7 +150,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 if pipe.color_compute_mode == "palette":
                     print("\n[ITER {}] Saving Palette".format(iteration))
-                scene.save(iteration)
+                scene.save(iteration, save_palette_and_mlp=(pipe.color_compute_mode == "palette"))
 
             # if (iteration - 1 == opt.palette_offset_from_iter):
             #     print("\n[ITER {}] Add palette offset".format(iteration))
