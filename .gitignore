@@ -1,7 +1,7 @@
 *.pyc
 *.ipynb
-*.bat
-*.sh
+./*.bat
+./*.sh
 *.egg-info
 .vscode
 output
@@ -17,3 +17,5 @@ tmp/
 viewers/
 data_palette/
 __pycache__
+Tracking-Anything-with-DEVA/saves
+Tracking-Anything-with-DEVA/example

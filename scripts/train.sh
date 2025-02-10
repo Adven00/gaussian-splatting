@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python train.py -s data/360/bonsai  --iterations 30000 -m ./output/ijcnn/bonsai  --lambda_sparsity_loss 0.2 --eval -i images_4
