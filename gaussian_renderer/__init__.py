@@ -11,7 +11,7 @@
 
 import torch
 import math
-from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from diff_gaussian_rasterization_obj import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from scene.mlp_model import MLPModel
 from utils.sh_utils import eval_sh
@@ -20,7 +20,7 @@ from kornia.color import lab_to_rgb, rgb_to_lab
 
 #BHY 用 decompose_layer 控制是否分层渲染各种 gaussian 参数
 def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None,
-           decompose_layer=False, use_specular=False, recolor=[-1, 0, 0, 0, 0]):
+           decompose_layer=False, use_specular=False, recolor=[-1, 0, 0, 0, 0], mask3d=None):
     """
     Render the scene. 
     
@@ -77,6 +77,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
     specular_precomp = None
     #BHY 不同 layer 的 colors_precomp, 收集给各 layer 渲染用
     colors_precomp_dict = {}
+
     if override_color is None:
         if pipe.color_compute_mode == "sh_python":
             shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
@@ -86,10 +87,14 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         elif pipe.color_compute_mode == "sh_cuda":
             shs = pc.get_features
+        elif pipe.color_compute_mode == "obj":
+            sh_objs = pc.get_objects
+            colors_precomp = torch.rand([pc.get_xyz.shape[0], 3]).cuda()
         #BHY palette 计算在这里
         elif pipe.color_compute_mode == "palette":
             palette_weights = palette_weights_from_alpha(pc.get_alpha)
             palette = pc.get_palette
+            sh_objs = pc.get_objects
 
             if use_specular:
                 shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)[:, :, :mlp.mlp_degree]
@@ -105,8 +110,12 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                 offset_index = torch.max(pc.get_alpha, 1)[1]
                 soft_palette = palette.repeat(palette_weights.shape[0], 1, 1)
                 soft_palette_lab = rgb_to_lab(soft_palette.transpose(1, 2)[:, :, :, None]).squeeze()
-                soft_palette_lab[torch.arange(soft_palette.shape[0]), torch.zeros_like(offset_index), offset_index] += palette_offset[:, 0] * 100
-                soft_palette_lab[torch.arange(soft_palette.shape[0]), torch.zeros_like(offset_index), -1] += palette_offset[:, 1] * 100
+
+                tmp1 = torch.arange(soft_palette.shape[0])
+                tmp2 = torch.zeros_like(offset_index)
+
+                soft_palette_lab[tmp1, tmp2, offset_index] += palette_offset[:, 0] * 100
+                soft_palette_lab[tmp1, tmp2, -1] += palette_offset[:, 1] * 100
                 soft_palette = lab_to_rgb(soft_palette_lab[:, :, :, None]).transpose(1, 2).squeeze()
 
                 if recolor[0] != -1:
@@ -119,7 +128,14 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                         soft_palette[:, idx] = rgb
                     if recolor[4] == 2:
                         idx = int(recolor[0])
-                        soft_palette_lab[torch.arange(soft_palette.shape[0]), :, idx] += torch.tensor(recolor[1:4]).cuda()
+
+                        if recolor[5] != -1:
+                            assert mask3d != None
+                            # print(torch.where(mask3d)[0].shape)
+                            soft_palette_lab[torch.where(mask3d)[0], :, idx] += torch.tensor(recolor[1:4]).cuda()
+                        else:    
+                            soft_palette_lab[torch.arange(soft_palette.shape[0]), :, idx] += torch.tensor(recolor[1:4]).cuda()
+
                         soft_palette = lab_to_rgb(soft_palette_lab[:, :, :, None]).transpose(1, 2).squeeze()
 
                 colors_precomp = (palette_weights[:, None] @ soft_palette).squeeze()
@@ -128,8 +144,8 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
                 # colors_precomp_dict["specular"] = palette_offset
             else:
                 colors_precomp = palette_weights @ palette
-
             colors_precomp = torch.clamp(colors_precomp, 0.0, 1.0)
+
 
             #BHY 分解不同 layer 的 colors_precomp
             if decompose_layer:
@@ -147,11 +163,12 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
     else:
         colors_precomp = override_color
 
-    # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, radii = rasterizer(
+    # Rasterize visible Gaussians to image, obtain their radii (on screen)
+    rendered_image, radii, rendered_objects = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
+        sh_objs = sh_objs,
         colors_precomp = colors_precomp,
         opacities = opacity,
         scales = scales,
@@ -163,7 +180,8 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
         "specular_precomp": specular_precomp,
         "viewspace_points": screenspace_points,
         "visibility_filter" : radii > 0,
-        "radii": radii
+        "radii": radii,
+        "render_object": rendered_objects
     }
     
     #BHY 渲染分解后的各 layer，开启 decompose_layer 才能启用
@@ -171,10 +189,11 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
         with torch.no_grad():    
             layers = {}
             for name, colors_precomp in colors_precomp_dict.items():
-                layer, _ = rasterizer(
+                layer, _, _ = rasterizer(
                     means3D = means3D,
                     means2D = means2D,
                     shs = shs,
+                    sh_objs = sh_objs,
                     colors_precomp = colors_precomp,
                     opacities = opacity,
                     scales = scales,

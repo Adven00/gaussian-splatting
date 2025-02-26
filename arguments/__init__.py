@@ -48,6 +48,7 @@ class ModelParams(ParamGroup):
     def __init__(self, parser, sentinel=False):
         self.mlp_degree = 8
         self.sh_degree = 3
+        self.num_classes = 256
         self._source_path = ""
         self._model_path = ""
         self._object_path = "object_mask"
@@ -76,7 +77,7 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.iterations = 30_000
+        self.iterations = 60_000
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
@@ -98,10 +99,19 @@ class OptimizationParams(ParamGroup):
         # self.palette_offset_from_iter = 7000
         self.palette_from_iter = 1000
         self.specular_from_iter = 7000
+        #BHY gaussian 属性在优化 obj 时冻结
+        self.obj_from_iter = 30000
 
         self.sparsity_interval = 1000
 
+        self.reg3d_interval = 5
+        self.reg3d_k = 5
+        self.reg3d_lambda_val = 2
+        self.reg3d_max_points = 200000
+        self.reg3d_sample_size = 1000
+
         self.feature_lr = 0.01
+        self.obj_lr = 0.01
         self.opacity_lr = 0.05
         self.scaling_lr = 0.005
         self.rotation_lr = 0.001

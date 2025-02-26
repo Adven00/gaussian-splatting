@@ -18,36 +18,80 @@ from gaussian_renderer import render
 import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
-import colorsys
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel, MLPModel
 from kornia.color import lab_to_rgb, rgb_to_lab
+from PIL import Image
+from utils.image_utils import visualize_obj
+import numpy as np
+import colorsys
 
-def render_set(model_path, name, iteration, views, gaussians, mlp, pipeline, background, recolor):
+# import cv2
+# from sklearn.decomposition import PCA
+# 
+# def feature_to_rgb(features):
+#     # Input features shape: (16, H, W)
+#     # Reshape features for PCA
+#     H, W = features.shape[1], features.shape[2]
+#     features_reshaped = features.view(features.shape[0], -1).T
+#     # Apply PCA and get the first 3 components
+#     pca = PCA(n_components=3)
+#     pca_result = pca.fit_transform(features_reshaped.cpu().numpy())
+# 
+#     # Reshape back to (H, W, 3)
+#     pca_result = pca_result.reshape(H, W, 3)
+# 
+#     # Normalize to [0, 255]
+#     pca_normalized = 255 * (pca_result - pca_result.min()) / (pca_result.max() - pca_result.min())
+#     rgb_array = pca_normalized.astype('uint8')
+#     return rgb_array
+
+def render_set(model_path, name, iteration, views, gaussians, mlp, pipeline, background, recolor, classifier, mask3d):
     if recolor[0] != -1:
-        method_name = ("HSV_{}_" if recolor[4] == 0 else ("RGB_{}_" if recolor[4] == 1 else "LAB_{}_")) \
+        method_name = ("id_{}_".format(int(recolor[5])) if recolor[5] != -1 else "") \
+            + ("HSV_{}_" if recolor[4] == 0 else ("RGB_{}_" if recolor[4] == 1 else "LAB_{}_")) \
             .format(int(recolor[0])) + "_".join(['{:.2f}'.format(x) for x in recolor[1:4]])
     else:
         method_name = "original"
     render_path = os.path.join(model_path, name, method_name, "renders")
     gts_path = os.path.join(model_path, name, method_name, "gt")
     layers_path = os.path.join(model_path, name, method_name, "layers")
+    # colormask_path = os.path.join(model_path, name, method_name, "objects_feature16")
+    gt_obj_path = os.path.join(model_path, name, method_name, "gt_obj")
+    obj_path = os.path.join(model_path, name, method_name, "obj")
 
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
     makedirs(layers_path, exist_ok=True)
+    # makedirs(colormask_path, exist_ok=True)
+    makedirs(gt_obj_path, exist_ok=True)
+    makedirs(obj_path, exist_ok=True)
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-        result = render(view, gaussians, mlp, pipeline, background,
-                        decompose_layer=(pipeline.color_compute_mode == "palette"), use_specular=True, recolor=recolor)
-        rendering = result["render"]
+        results = render(view, gaussians, mlp, pipeline, background,
+                        decompose_layer=(pipeline.color_compute_mode == "palette"), use_specular=True, recolor=recolor, mask3d=mask3d)
+        rendering = results["render"]
+        rendering_obj = results["render_object"]
+
+        logits = classifier(rendering_obj)
+        obj = torch.argmax(logits,dim=0)
+        obj_mask = visualize_obj(obj.cpu().numpy().astype(np.uint8))
+
+        gt_objects = view.objects
+        gt_obj_mask = visualize_obj(gt_objects.cpu().numpy().astype(np.uint8))
+
+        # rgb_mask = feature_to_rgb(rendering_obj)
+        # Image.fromarray(rgb_mask).save(os.path.join(colormask_path, '{0:05d}'.format(idx) + ".png"))
+        Image.fromarray(gt_obj_mask).save(os.path.join(gt_obj_path, '{0:05d}'.format(idx) + ".png"))
+        Image.fromarray(obj_mask).save(os.path.join(obj_path, '{0:05d}'.format(idx) + ".png"))
+
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
 
         #BHY 保存分层渲染结果
         if pipeline.color_compute_mode == "palette":
-            layers = result["layers"]
+            layers = results["layers"]
             for name, layer in layers.items():
                 torchvision.utils.save_image(layer, os.path.join(layers_path, '{0:05d}_'.format(idx) + name +".png"))
 
@@ -56,6 +100,16 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         gaussians = GaussianModel(dataset.sh_degree)
         mlp = MLPModel(dataset.mlp_degree)
         scene = Scene(dataset, gaussians, mlp, load_iteration=iteration, shuffle=False)
+
+        num_classes = dataset.num_classes
+        print("Num classes: ",num_classes)
+
+        classifier = torch.nn.Conv2d(gaussians.num_objects, num_classes, kernel_size=1)
+        classifier.cuda()
+        classifier.load_state_dict(torch.load(os.path.join(dataset.model_path, "cls_chkpnt{}.pth".format(scene.loaded_iter))))
+
+        mask3d = None
+
         if recolor[0] != -1:
             if recolor[4] == 0:
                 target_idx = int(recolor[0])
@@ -72,15 +126,23 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
                 lab_original = rgb_to_lab(gaussians.get_palette[target_idx][None, :, None, None]).squeeze()
                 recolor[1:4] = (lab_target - lab_original).tolist()
                 print("Edit palette[{}] with diff {} in LAB space".format(target_idx, recolor[1:4]))
+
+            if recolor[5] != -1:
+                logits3d = classifier(gaussians._objects_dc.permute(2,0,1))
+                # prob_obj3d = torch.softmax(logits3d,dim=0)
+                # mask3d = (prob_obj3d[int(recolor[5]), :, :] > 0.3).squeeze()
+                obj3d = torch.argmax(logits3d, dim=0)
+                mask3d = (obj3d == recolor[5]).squeeze()
+                print("Select object with id {}".format(recolor[5]))
         
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, mlp, pipeline, background, recolor)
+            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, mlp, pipeline, background, recolor, classifier, mask3d)
 
         if not skip_test:
-            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, mlp, pipeline, background, recolor)
+            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, mlp, pipeline, background, recolor, classifier, mask3d)
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -91,8 +153,8 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
-    #BHY recolor 参数：palette_idx(-1:don't recolor), new_r, new_g, new_b, mode(0:modify in hsv, 1:replace in rgb, 2:modify in LAB)
-    parser.add_argument("--recolor", nargs=5, type=float, default=[-1, 0.0, 0.0, 0.0, 0])
+    #BHY recolor 参数：palette_idx(-1:don't recolor), new_r, new_g, new_b, mode(0:modify in hsv, 1:replace in rgb, 2:modify in LAB), object_id
+    parser.add_argument("--recolor", nargs=6, type=float, default=[-1, 0.0, 0.0, 0.0, 0, -1])
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
 

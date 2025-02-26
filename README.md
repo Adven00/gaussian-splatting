@@ -52,8 +52,9 @@ $$
 // 训练完成后输出目录下会有优化后的 palette 图片
 // 将 index 位置（从 0 起）的 palette color 重着色为 r g b
 // mode 是重着色模式，0 为 hsv 空间，1 为 rgb 直接替换，2 为 lab 空间
+// object_id 是需要重着色的物体的编码，默认 -1 为全重着色
 // 参见 PaletteNeRF Suplementary
---recolor <index r g b mode>
+--recolor <index r g b mode object_id>
 ```
 
 ## palette 提取
@@ -61,3 +62,28 @@ $$
 `python extract.py -m .\output\garden\3D-GS --normalize`
 
 注意，只能从训练好的，未使用 palette 的高斯点云中提取（`color_compute_mode = sh_cuda`），颜色来自 0 阶球谐。输出 `extracted_rgb_palette.jpg` 和 `extracted_rgb_palette.npy` 。
+
+## object mask 相关
+使用 gaussian grouping 中经过修改的 `diff-gaussian-rasterization` 模块，可以将高斯球中的特征向量（16 维）渲染成特征图，与颜色的渲染方式一样
+
+```python
+rendered_image, radii, rendered_objects = rasterizer(
+    means3D = means3D,
+    means2D = means2D,
+    shs = shs,
+    sh_objs = sh_objs,
+    colors_precomp = colors_precomp,
+    opacities = opacity,
+    scales = scales,
+    rotations = rotations,
+    cov3D_precomp = cov3D_precomp)
+```
+
+`classifier` 将 16 维特征向量图转化成 256 维类别向量图，再取最大值索引，再去重
+
+```python
+classifier = torch.nn.Conv2d(gaussians.num_objects, num_classes, kernel_size=1)
+logits = classifier(rendering_obj)
+obj = torch.argmax(logits, dim=0)
+all_obj_ids = np.unique(obj)
+```

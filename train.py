@@ -11,15 +11,16 @@
 
 import os
 import torch
+import numpy as np
 from random import randint
-from utils.loss_utils import l1_loss, ssim, l2_loss, smoothed_l0_loss
+from utils.loss_utils import l1_loss, ssim, l2_loss, smoothed_l0_loss, loss_cls_3d
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel, MLPModel
 from utils.general_utils import safe_state
 import uuid
 from tqdm import tqdm
-from utils.image_utils import psnr
+from utils.image_utils import psnr, visualize_obj
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 try:
@@ -35,9 +36,20 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
     mlp = MLPModel(dataset.mlp_degree)
     #BHY 这里 gaissian 和 mlp 才真正初始化
     scene = Scene(dataset, gaussians, mlp)
+
+    #BHY Grouping 训练相关
+    num_classes = dataset.num_classes
+    print("Num classes: ", num_classes)
+    classifier = torch.nn.Conv2d(gaussians.num_objects, num_classes, kernel_size=1)
+    cls_criterion = torch.nn.CrossEntropyLoss(reduction='none')
+    cls_optimizer = torch.optim.Adam(classifier.parameters(), lr=5e-4)
+    classifier.cuda()
+
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
+        #BHY 强制 30000 开始
+        first_iter = opt.obj_from_iter
         gaussians.restore(model_params, opt)
 
     #BHY 分离出原始 palette ，与 gaussians 中的在梯度或数据上没有任何关系
@@ -73,7 +85,8 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
 
         iter_start.record()
 
-        gaussians.update_learning_rate(iteration)
+        if iteration <= opt.obj_from_iter:
+            gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
@@ -81,6 +94,10 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
 
         if iteration - 1 == opt.palette_from_iter:
             gaussians.optimize_palette(opt.palette_lr)
+
+        if iteration - 1 == opt.obj_from_iter:
+            pipe.color_compute_mode = "obj"
+            gaussians.optimize_obj(opt.obj_lr)
 
         # Pick a random Camera
         if not viewpoint_stack:
@@ -98,71 +115,94 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
                             use_specular=(iteration > opt.specular_from_iter))
         
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        objects = render_pkg["render_object"]
         # specular_precomp = render_pkg["specular_precomp"]
         # Loss
         loss_dict = {}
 
-        gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        image_loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        loss_dict["image"] = image_loss
-        loss_dict["l1"] = Ll1
+        if iteration <= opt.obj_from_iter:
+            gt_image = viewpoint_cam.original_image.cuda()
+            Ll1 = l1_loss(image, gt_image)
+            image_loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+            loss_dict["image"] = image_loss
+            loss_dict["l1"] = Ll1
 
-        if pipe.color_compute_mode == "palette":
-            if opt.lambda_palette_loss > 0 and iteration > opt.palette_from_iter:
-                palette_loss = l2_loss(orginal_palette[:-1], gaussians.get_palette[:-1]) * opt.lambda_palette_loss
-                loss_dict["palette"] = palette_loss
+            if pipe.color_compute_mode == "palette":
+                if opt.lambda_palette_loss > 0 and iteration > opt.palette_from_iter:
+                    palette_loss = l2_loss(orginal_palette[:-1], gaussians.get_palette[:-1]) * opt.lambda_palette_loss
+                    loss_dict["palette"] = palette_loss
 
-            if opt.lambda_sparsity_loss > 0:
-                # sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
-                smooth_level = int(iteration / opt.sparsity_interval) if int(iteration / opt.sparsity_interval) <= 6 else 6
-                sparsity_loss = smoothed_l0_loss(gaussians.get_alpha, smooth_level) * opt.lambda_sparsity_loss
-                loss_dict["sparsity"] = sparsity_loss
+                if opt.lambda_sparsity_loss > 0:
+                    # sparsity_loss = (torch.norm(gaussians.get_alpha, p=1) / torch.norm(gaussians.get_alpha, p=2)**2 - 1).mean() * opt.lambda_sparsity_loss
+                    smooth_level = int(iteration / opt.sparsity_interval) if int(iteration / opt.sparsity_interval) <= 6 else 6
+                    sparsity_loss = smoothed_l0_loss(gaussians.get_alpha, smooth_level) * opt.lambda_sparsity_loss
+                    loss_dict["sparsity"] = sparsity_loss
 
-            # if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
-            #     palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset)) * opt.lambda_palette_offset_loss
-            #     loss_dict["palette_offset"] = palette_offset_loss
+                # if opt.lambda_palette_offset_loss > 0 and iteration > opt.palette_offset_from_iter:
+                #     palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset)) * opt.lambda_palette_offset_loss
+                #     loss_dict["palette_offset"] = palette_offset_loss
 
-            # if opt.lambda_specular_loss > 0 and iteration > opt.specular_from_iter:
-            #     specular_loss = l2_loss(specular_precomp, torch.zeros_like(specular_precomp)) * opt.lambda_specular_loss
-            #     loss_dict["specular_loss"] = specular_loss
+                # if opt.lambda_specular_loss > 0 and iteration > opt.specular_from_iter:
+                #     specular_loss = l2_loss(specular_precomp, torch.zeros_like(specular_precomp)) * opt.lambda_specular_loss
+                #     loss_dict["specular_loss"] = specular_loss
+        if iteration > opt.obj_from_iter:
+            #BHY Object Loss
+            gt_obj = viewpoint_cam.objects.cuda().long()
+            logits = classifier(objects)
+            obj_loss = cls_criterion(logits.unsqueeze(0), gt_obj.unsqueeze(0)).squeeze().mean()
+            obj_loss = obj_loss / torch.log(torch.tensor(num_classes))  # normalize to (0,1)
+            loss_dict["obj"] = obj_loss
+
+            logits3d = classifier(gaussians._objects_dc.permute(2,0,1))
+            prob_obj3d = torch.softmax(logits3d,dim=0).squeeze().permute(1,0)
+            loss_obj_3d = loss_cls_3d(gaussians._xyz.squeeze().detach(), prob_obj3d, opt.reg3d_k, opt.reg3d_lambda_val, opt.reg3d_max_points, opt.reg3d_sample_size)
+            loss_dict["obj_3d"] = loss_obj_3d
             
         total_loss = sum(loss_dict.values())
         total_loss.backward()
-        loss_dict["total"] = total_loss
+
+        torch.cuda.empty_cache()
+        # loss_dict["total"] = total_loss
 
         iter_end.record()
 
         with torch.no_grad():
             # Progress bar
-            ema_loss_for_log = 0.4 * image_loss.item() + 0.6 * ema_loss_for_log
+            # ema_loss_for_log = 0.4 * image_loss.item() + 0.6 * ema_loss_for_log
             if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+                # progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), test_iterations, scene, render,
+            #BHY 解决 load checkpoint 后的 bug
+            #BHY https://stackoverflow.com/questions/6551121/cuda-cudaeventelapsedtime-returns-device-not-ready-error
+            torch.cuda.synchronize()
+            training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), test_iterations, scene, classifier, render,
                             (pipe, background, 1, None, True, (iteration > opt.specular_from_iter)))
             
             if (iteration in save_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 if pipe.color_compute_mode == "palette":
                     print("\n[ITER {}] Saving Palette".format(iteration))
-                scene.save(iteration, save_palette_and_mlp=(pipe.color_compute_mode == "palette"))
+                scene.save(iteration, save_palette_and_mlp=(pipe.color_compute_mode == "palette"), save_obj = (iteration > opt.obj_from_iter))
+                torch.save(classifier.state_dict(), os.path.join(scene.model_path, "cls_chkpnt{}.pth".format(iteration)))
 
             # if (iteration - 1 == opt.palette_offset_from_iter):
             #     print("\n[ITER {}] Add palette offset".format(iteration))
 
-            if (iteration - 1 == opt.specular_from_iter):
+            if (iteration == opt.specular_from_iter):
                 print("\n[ITER {}] Add specular".format(iteration))
 
-            if (iteration - 1 == opt.palette_from_iter):
+            if (iteration == opt.palette_from_iter):
                 print("\n[ITER {}] Optimize palette".format(iteration))
+            
+            if iteration == opt.obj_from_iter:
+                print("\n[ITER {}] Optimize object, other attributes are fixed.".format(iteration))
 
             # Densification
-            if iteration < opt.densify_until_iter:
+            if iteration < opt.densify_until_iter and iteration < opt.obj_from_iter:
                 # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
@@ -175,7 +215,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
                     gaussians.reset_opacity()
 
             # Optimizer step
-            if iteration < opt.iterations:
+            if iteration <= opt.obj_from_iter:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
 
@@ -183,6 +223,11 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
                     if iteration > opt.specular_from_iter:
                         mlp.optimizer.step()
                         mlp.optimizer.zero_grad(set_to_none = True)
+            else:
+                gaussians.obj_optimizer.step()
+                gaussians.obj_optimizer.zero_grad(set_to_none = True)
+                cls_optimizer.step()
+                cls_optimizer.zero_grad(set_to_none = True)
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
@@ -210,7 +255,7 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, loss_dict, elapsed, test_iterations, scene : Scene, renderFunc, renderArgs):
+def training_report(tb_writer, iteration, loss_dict, elapsed, test_iterations, scene : Scene, classifier, renderFunc, renderArgs):
     if tb_writer:
         for name, loss in loss_dict.items():
             tb_writer.add_scalar('train_loss_patches/' + name, loss.item(), iteration)
@@ -228,13 +273,20 @@ def training_report(tb_writer, iteration, loss_dict, elapsed, test_iterations, s
                 psnr_test = 0.0
                 for idx, viewpoint in enumerate(config['cameras']):
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
+                    # gt_obj = viewpoint.objects.cuda().long()
 
                     #BHY 只在 test 的时候渲染各层，减少训练开销
                     result = renderFunc(viewpoint, scene.gaussians, scene.mlp, *renderArgs)
                     image = torch.clamp(result["render"], 0.0, 1.0)
 
+                    obj = torch.argmax(classifier(result["render_object"]),dim=0)
+                    obj = torch.from_numpy(visualize_obj(obj.cpu().numpy().astype(np.uint8))).permute(2, 0, 1).cuda()
+
                     if tb_writer and (idx < 5):
-                        tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None], global_step=iteration)
+                        if renderArgs[0].color_compute_mode == "obj":
+                            tb_writer.add_images(config['name'] + "_view_{}/render_object".format(viewpoint.image_name), obj[None], global_step=iteration)
+                        else:
+                            tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None], global_step=iteration)
 
                         #BHY RenderArgs[0] 是 pipe
                         # 显示各个 layer 的渲染结果
@@ -245,6 +297,8 @@ def training_report(tb_writer, iteration, loss_dict, elapsed, test_iterations, s
                                 tb_writer.add_images(config['name'] + "_view_{}/{}".format(viewpoint.image_name, name), layer[None], global_step=iteration)
 
                         if iteration == test_iterations[0]:
+                            # if renderArgs[0].color_compute_mode == "obj":
+                                # tb_writer.add_images(config['name'] + "_view_{}/gt_object".format(viewpoint.image_name), gt_obj[None], global_step=iteration)
                             tb_writer.add_images(config['name'] + "_view_{}/gt".format(viewpoint.image_name), gt_image[None], global_step=iteration)
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
@@ -272,15 +326,15 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     #BHY 频繁 test 会导致显存不够！必要时取消掉
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=list(range(10000, 200000, 10000)))
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     args = parser.parse_args(sys.argv[1:])
-    args.save_iterations.append(args.iterations)
-    args.checkpoint_iterations.append(args.iterations)
-    args.test_iterations.append(args.iterations)
+    args.save_iterations.extend((op.obj_from_iter, args.iterations))
+    args.checkpoint_iterations.extend((op.obj_from_iter, args.iterations))
+    args.test_iterations.extend((op.obj_from_iter, args.iterations))
     
     print("Optimizing " + args.model_path)
 
@@ -290,7 +344,7 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
+    torch.cuda.memory._record_memory_history(enabled=True)
     training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
-
     # All done
     print("\nTraining complete.")

@@ -70,6 +70,7 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
         self.optimizer = None
+        self.obj_optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
         self.setup_functions()
@@ -91,15 +92,15 @@ class GaussianModel:
             self.max_radii2D,
             self.xyz_gradient_accum,
             self.denom,
-            self.optimizer.state_dict(),
+            # self.optimizer.state_dict(),
             self.spatial_lr_scale,
         )
     
     def restore(self, model_args, training_args):
         (self.active_sh_degree, 
         self._xyz,
-        self._alpha,
         self._palette,
+        self._alpha,
         # self._palette_offset,
         # self._intensity,
         self._features_dc,
@@ -111,12 +112,15 @@ class GaussianModel:
         self.max_radii2D, 
         xyz_gradient_accum, 
         denom,
-        opt_dict, 
+        # opt_dict,
+        # obj_opt_dict,
         self.spatial_lr_scale) = model_args
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
-        self.optimizer.load_state_dict(opt_dict)
+        # self.optimizer.add_param_group({'params': [self._palette], 'lr': 0.01, "name": "palette"})
+        # self.optimizer.load_state_dict(opt_dict)
+        # self.obj_optimizer.load_state_dict(obj_opt_dict)
 
     @property
     def get_scaling(self):
@@ -174,6 +178,28 @@ class GaussianModel:
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
+
+    #BHY 仅优化 obj
+    def optimize_obj(self, lr):
+        fused_objects = RGB2SH(torch.rand((self._xyz.shape[0], self.num_objects), device="cuda"))
+        fused_objects = fused_objects[:,:,None]
+        self._objects_dc = nn.Parameter(fused_objects.transpose(1, 2).contiguous().requires_grad_(True))
+        l = [
+            {'params': [self._objects_dc], 'lr': lr, "name": "obj_dc"}
+        ]
+        self.obj_optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+        self.optimizer = None
+
+        self._xyz.requires_grad_(False)
+        self._rotation.requires_grad_(False)
+        self._scaling.requires_grad_(False)
+        self._opacity.requires_grad_(False)
+        self._alpha.requires_grad_(False)
+        self._features_dc.requires_grad_(False)
+        self._features_rest.requires_grad_(False)
+
+        torch.cuda.empty_cache()
+
 
     #BHY 实际的初始化发生在这里
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float, palette_path):
@@ -240,7 +266,7 @@ class GaussianModel:
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
-            {'params': [self._objects_dc], 'lr': training_args.feature_lr, "name": "obj_dc"}
+            # {'params': [self._objects_dc], 'lr': training_args.feature_lr, "name": "obj_dc"}
         ]
 
         #BHY 设置学习率
@@ -309,8 +335,6 @@ class GaussianModel:
         if self.palette_size != -1:
             for i in range(self._alpha.shape[1]):
                 l.append('alpha_{}'.format(i))
-        for i in range(self._objects_dc.shape[1]*self._objects_dc.shape[2]):
-            l.append('obj_dc_{}'.format(i))
 
             # for i in range(self._palette_offset.shape[1]*3):
             #     l.append('p_offset_{}'.format(i))
@@ -318,7 +342,7 @@ class GaussianModel:
             # l.append('intensity')
         return l
 
-    def save_ply(self, path):
+    def save_ply(self, path, save_obj=False):
         mkdir_p(os.path.dirname(path))
 
         xyz = self._xyz.detach().cpu().numpy()
@@ -328,7 +352,8 @@ class GaussianModel:
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
-        obj_dc = self._objects_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+
+        l = self.construct_list_of_attributes()
 
         #BHY palette 相关属性保存到 ply
         if self.palette_size != -1:
@@ -336,14 +361,21 @@ class GaussianModel:
             alpha = self._alpha.detach().cpu().numpy()
             # palette_offset = self._palette_offset.detach().flatten(start_dim=1).contiguous().cpu().numpy()
 
-        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+        if save_obj:
+            obj_dc = self._objects_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+            for i in range(self._objects_dc.shape[1]*self._objects_dc.shape[2]):
+                l.append('obj_dc_{}'.format(i))
+
+        dtype_full = [(attribute, 'f4') for attribute in l]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
         attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
 
         if self.palette_size != -1:
             attributes = np.concatenate((attributes, alpha), axis=1)
-        attributes = np.concatenate((attributes, obj_dc), axis=1)
+
+        if save_obj:
+            attributes = np.concatenate((attributes, obj_dc), axis=1)
 
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
@@ -509,7 +541,7 @@ class GaussianModel:
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
-        self._objects_dc = optimizable_tensors["obj_dc"]
+        # self._objects_dc = optimizable_tensors["obj_dc"]
 
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
 
@@ -541,12 +573,11 @@ class GaussianModel:
         return optimizable_tensors
 
     #BHY 与高斯球的加密有关
-    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_alpha, new_objects_dc):
+    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_alpha):
         d = {"xyz": new_xyz,
         "opacity": new_opacities,
         "scaling" : new_scaling,
-        "rotation" : new_rotation,
-        "obj_dc": new_objects_dc}
+        "rotation" : new_rotation}
 
         if self.palette_size != -1:
             d["alpha"] = new_alpha
@@ -568,7 +599,7 @@ class GaussianModel:
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
-        self._objects_dc = optimizable_tensors["obj_dc"]
+        # self._objects_dc = optimizable_tensors["obj_dc"]
 
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -604,9 +635,9 @@ class GaussianModel:
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
-        new_objects_dc = self._objects_dc[selected_pts_mask].repeat(N,1,1)
+        # new_objects_dc = self._objects_dc[selected_pts_mask].repeat(N,1,1)
 
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_alpha, new_objects_dc)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_alpha)
 
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
@@ -621,7 +652,7 @@ class GaussianModel:
         new_opacity = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
-        new_objects_dc = self._objects_dc[selected_pts_mask]
+        # new_objects_dc = self._objects_dc[selected_pts_mask]
         
         if self.palette_size != -1:
             new_alpha = self._alpha[selected_pts_mask]
@@ -635,7 +666,7 @@ class GaussianModel:
         new_features_dc = self._features_dc[selected_pts_mask]
         new_features_rest = self._features_rest[selected_pts_mask]
             
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_alpha, new_objects_dc)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_alpha)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom
@@ -650,6 +681,13 @@ class GaussianModel:
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask)
+
+        #BHY 为了在 obj_from_iter 前给可微渲染器一个 sh_objs 输入值，这里生成一个大小合适的 objects_dc
+        #BHY 当然这个值是无意义的，obj_from_iter 之后这里不应当再被调用
+
+        fused_objects = torch.zeros((self._xyz.shape[0], self.num_objects), device="cuda")
+        fused_objects = fused_objects[:,:,None]
+        self._objects_dc = nn.Parameter(fused_objects.transpose(1, 2).contiguous().requires_grad_(True))
 
         torch.cuda.empty_cache()
 

@@ -65,4 +65,47 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
         return ssim_map.mean()
     else:
         return ssim_map.mean(1).mean(1).mean(1)
+    
+def loss_cls_3d(features, predictions, k=5, lambda_val=2.0, max_points=200000, sample_size=800):
+    """
+    Compute the neighborhood consistency loss for a 3D point cloud using Top-k neighbors
+    and the KL divergence.
+    
+    :param features: Tensor of shape (N, D), where N is the number of points and D is the dimensionality of the feature.
+    :param predictions: Tensor of shape (N, C), where C is the number of classes.
+    :param k: Number of neighbors to consider.
+    :param lambda_val: Weighting factor for the loss.
+    :param max_points: Maximum number of points for downsampling. If the number of points exceeds this, they are randomly downsampled.
+    :param sample_size: Number of points to randomly sample for computing the loss.
+    
+    :return: Computed loss value.
+    """
+    # Conditionally downsample if points exceed max_points
+    if features.size(0) > max_points:
+        indices = torch.randperm(features.size(0))[:max_points]
+        features = features[indices]
+        predictions = predictions[indices]
+
+
+    # Randomly sample points for which we'll compute the loss
+    indices = torch.randperm(features.size(0))[:sample_size]
+    sample_features = features[indices]
+    sample_preds = predictions[indices]
+
+    # Compute top-k nearest neighbors directly in PyTorch
+    dists = torch.cdist(sample_features, features)  # Compute pairwise distances
+    _, neighbor_indices_tensor = dists.topk(k, largest=False)  # Get top-k smallest distances
+
+    # Fetch neighbor predictions using indexing
+    neighbor_preds = predictions[neighbor_indices_tensor]
+
+    # Compute KL divergence
+    kl = sample_preds.unsqueeze(1) * (torch.log(sample_preds.unsqueeze(1) + 1e-10) - torch.log(neighbor_preds + 1e-10))
+    loss = kl.sum(dim=-1).mean()
+
+    # Normalize loss into [0, 1]
+    num_classes = predictions.size(1)
+    normalized_loss = loss / num_classes
+
+    return lambda_val * normalized_loss
 
