@@ -74,7 +74,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
     shs = None
     colors_precomp = None
-    # specular_precomp = None
+    specular_precomp = None
     #BHY 不同 layer 的 colors_precomp, 收集给各 layer 渲染用
     colors_precomp_dict = {}
     if override_color is None:
@@ -93,7 +93,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
 
             if use_specular:
                 shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)[:, :, :mlp.mlp_degree]
-                dir_pp = pc.get_xyz - viewpoint_camera.camera_center
+                dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
                 dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
 
                 palette_offset = torch.bmm(
@@ -103,10 +103,10 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
 
                 # palette_offset = torch.cat((palette_offset, torch.zeros([palette_offset.shape[0], 1, 3], dtype=torch.float, device="cuda")), dim=1)
                 offset_index = torch.max(pc.get_alpha, 1)[1]
-                soft_palette = palette.unsqueeze(0).expand(palette_weights.shape[0], -1, -1)
+                soft_palette = palette.repeat(palette_weights.shape[0], 1, 1)
                 soft_palette_lab = rgb_to_lab(soft_palette.transpose(1, 2)[:, :, :, None]).squeeze()
-                soft_palette_lab[torch.arange(soft_palette.shape[0]), torch.zeros_like(offset_index), offset_index].add_(palette_offset[:, 0] * 100)
-                soft_palette_lab[torch.arange(soft_palette.shape[0]), torch.zeros_like(offset_index), -1].add_(palette_offset[:, 1] * 100)
+                soft_palette_lab[torch.arange(soft_palette.shape[0]), torch.zeros_like(offset_index), offset_index] += palette_offset[:, 0] * 100
+                soft_palette_lab[torch.arange(soft_palette.shape[0]), torch.zeros_like(offset_index), -1] += palette_offset[:, 1] * 100
                 soft_palette = lab_to_rgb(soft_palette_lab[:, :, :, None]).transpose(1, 2).squeeze()
 
                 if recolor[0] != -1:
@@ -129,7 +129,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
             else:
                 colors_precomp = palette_weights @ palette
 
-            colors_precomp = torch.clamp_(colors_precomp, 0.0, 1.0)
+            colors_precomp = torch.clamp(colors_precomp, 0.0, 1.0)
 
             #BHY 分解不同 layer 的 colors_precomp
             if decompose_layer:
@@ -160,7 +160,7 @@ def render(viewpoint_camera, pc : GaussianModel, mlp : MLPModel, pipe, bg_color 
     
     result = {
         "render": rendered_image,
-        # "specular_precomp": specular_precomp,
+        "specular_precomp": specular_precomp,
         "viewspace_points": screenspace_points,
         "visibility_filter" : radii > 0,
         "radii": radii

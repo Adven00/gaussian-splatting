@@ -98,7 +98,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
                             use_specular=(iteration > opt.specular_from_iter))
         
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-        specular_precomp = render_pkg["specular_precomp"]
+        # specular_precomp = render_pkg["specular_precomp"]
         # Loss
         loss_dict = {}
 
@@ -123,9 +123,9 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
             #     palette_offset_loss = l2_loss(gaussians.get_palette_offset, torch.zeros_like(gaussians.get_palette_offset)) * opt.lambda_palette_offset_loss
             #     loss_dict["palette_offset"] = palette_offset_loss
 
-            if opt.lambda_specular_loss > 0 and iteration > opt.specular_from_iter:
-                specular_loss = l2_loss(specular_precomp, torch.zeros_like(specular_precomp)) * opt.lambda_specular_loss
-                loss_dict["specular_loss"] = specular_loss
+            # if opt.lambda_specular_loss > 0 and iteration > opt.specular_from_iter:
+            #     specular_loss = l2_loss(specular_precomp, torch.zeros_like(specular_precomp)) * opt.lambda_specular_loss
+            #     loss_dict["specular_loss"] = specular_loss
             
         total_loss = sum(loss_dict.values())
         total_loss.backward()
@@ -146,7 +146,7 @@ def training(dataset, opt, pipe, test_iterations, save_iterations, checkpoint_it
             training_report(tb_writer, iteration, loss_dict, iter_start.elapsed_time(iter_end), test_iterations, scene, render,
                             (pipe, background, 1, None, True, (iteration > opt.specular_from_iter)))
             
-            if (iteration in save_iterations or iteration - 1 == opt.specular_from_iter):
+            if (iteration in save_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 if pipe.color_compute_mode == "palette":
                     print("\n[ITER {}] Saving Palette".format(iteration))
@@ -272,7 +272,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     #BHY 频繁 test 会导致显存不够！必要时取消掉
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=list(range(2000, 200000, 10000)))
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=list(range(10000, 200000, 10000)))
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
@@ -280,6 +280,7 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     args.checkpoint_iterations.append(args.iterations)
+    args.test_iterations.append(args.iterations)
     
     print("Optimizing " + args.model_path)
 
